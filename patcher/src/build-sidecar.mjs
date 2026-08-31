@@ -89,8 +89,9 @@ export async function buildSidecar({ input, output, token }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const options = parseArguments(process.argv.slice(2));
-  if (!options.input || !options.output || !options.token) {
-    throw new Error('Usage: node build-sidecar.mjs --input <official.asar> --output <sidecar.asar> --token <czb_token>');
+  const token = process.env.CHONGZHEN_BRIDGE_TOKEN || options.token;
+  if (!options.input || !options.output || !token) {
+    throw new Error('Usage: set CHONGZHEN_BRIDGE_TOKEN and run node build-sidecar.mjs --input <official.asar> --output <sidecar.asar>');
   }
-  process.stdout.write(`${JSON.stringify(await buildSidecar(options))}\n`);
+  process.stdout.write(`${JSON.stringify(await buildSidecar({ ...options, token }))}\n`);
 }
