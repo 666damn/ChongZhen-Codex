@@ -15,6 +15,12 @@ static class Program
             await RunWatcherAsync();
             return;
         }
+        if (options.Command == AppCommand.AuditPayload)
+        {
+            try { ReleasePayloadAudit.Run(); }
+            catch { Environment.ExitCode = 1; }
+            return;
+        }
 
         ApplicationConfiguration.Initialize();
         try

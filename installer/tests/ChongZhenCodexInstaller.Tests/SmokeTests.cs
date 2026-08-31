@@ -10,6 +10,7 @@ public sealed class SmokeTests
     [InlineData("--install-bridge", AppCommand.InstallBridge)]
     [InlineData("--install-global", AppCommand.InstallGlobal)]
     [InlineData("--uninstall", AppCommand.Uninstall)]
+    [InlineData("--audit-payload", AppCommand.AuditPayload)]
     public void ParsesCommand(string argument, AppCommand expected)
     {
         Assert.Equal(expected, CommandLine.Parse([argument]).Command);

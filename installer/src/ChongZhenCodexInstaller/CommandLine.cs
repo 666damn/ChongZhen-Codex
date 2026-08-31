@@ -14,6 +14,7 @@ public static class CommandLine
             ["--install-bridge"] = AppCommand.InstallBridge,
             ["--install-global"] = AppCommand.InstallGlobal,
             ["--uninstall"] = AppCommand.Uninstall,
+            ["--audit-payload"] = AppCommand.AuditPayload,
         };
 
     public static CommandLineOptions Parse(IReadOnlyList<string> arguments)

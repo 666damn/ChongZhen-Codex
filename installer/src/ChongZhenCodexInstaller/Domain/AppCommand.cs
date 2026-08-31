@@ -8,4 +8,5 @@ public enum AppCommand
     InstallBridge,
     InstallGlobal,
     Uninstall,
+    AuditPayload,
 }
