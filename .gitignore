@@ -1,0 +1,49 @@
+# Development worktrees and toolchains
+.worktrees/
+.tools/
+
+# Dependencies and generated output
+node_modules/
+build/
+dist/
+work/
+diagnostics/
+coverage/
+TestResults/
+bin/
+obj/
+
+# Local runtime state and user-derived data
+state.db*
+*.log
+*.pid
+bridge-config.json
+game-byok-localstorage-*.json
+*.pre-codex
+backups/
+logs/
+data/
+
+# Complete game material and reverse-engineering workspaces
+ChongZhenSimulator_*/
+*.asar
+*.jsc
+*.cer
+*.mp4
+*.webp
+
+# Native and packaged binaries are generated locally
+*.exe
+*.dll
+*.obj
+*.pdb
+*.zip
+
+# IDE and OS files
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.user
+*.suo
