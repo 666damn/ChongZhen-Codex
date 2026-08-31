@@ -84,6 +84,24 @@ public sealed class PatchServiceTests : IDisposable
         Assert.False(File.Exists(fixture.StateStore.StatePath));
     }
 
+    [Fact]
+    public async Task FailedSidecarReinstallKeepsTheExistingLoaderAndState()
+    {
+        var fixture = CreateFixture();
+        await fixture.Service.InstallGlobalAsync(
+            fixture.Game, fixture.Payload, FailurePoint.None, CancellationToken.None);
+        var versionBefore = TestFiles.Sha256(fixture.Game.VersionPath);
+        var originalBefore = TestFiles.Sha256(fixture.Game.VersionOriginalPath);
+        var stateBefore = await File.ReadAllBytesAsync(fixture.StateStore.StatePath);
+
+        await Assert.ThrowsAsync<InjectedFailureException>(() => fixture.Service.InstallGlobalAsync(
+            fixture.Game, fixture.Payload, FailurePoint.AfterDllReplace, CancellationToken.None));
+
+        Assert.Equal(versionBefore, TestFiles.Sha256(fixture.Game.VersionPath));
+        Assert.Equal(originalBefore, TestFiles.Sha256(fixture.Game.VersionOriginalPath));
+        Assert.Equal(stateBefore, await File.ReadAllBytesAsync(fixture.StateStore.StatePath));
+    }
+
     private Fixture CreateFixture()
     {
         var id = Guid.NewGuid().ToString("N");

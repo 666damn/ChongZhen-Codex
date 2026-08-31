@@ -33,11 +33,11 @@ public sealed class InstallerCoordinatorTests
         var result = await coordinator.InstallAsync(InstallMode.BridgeOnly, CancellationToken.None);
 
         Assert.True(result.Success);
-        Assert.Equal(["Discover", "RestoreGlobal", "InstallBridge", "ConfigureByokInstall"], backend.Calls);
+        Assert.Equal(["Discover", "InstallBridge", "RestoreGlobal", "ConfigureByokInstall"], backend.Calls);
     }
 
     [Fact]
-    public async Task ReinstallingGlobalRestoresOriginalGameBeforeApplyingFreshPayload()
+    public async Task ReinstallingGlobalTransactionallyReplacesTheExistingProjectLoader()
     {
         var backend = new FakeBackend();
         var store = new MemoryCoordinatorStateStore
@@ -49,7 +49,24 @@ public sealed class InstallerCoordinatorTests
         var result = await coordinator.InstallAsync(InstallMode.BridgeAndGlobal, CancellationToken.None);
 
         Assert.True(result.Success);
-        Assert.Equal(["Discover", "RestoreGlobal", "InstallBridge", "InstallGlobal", "ConfigureByokInstall"], backend.Calls);
+        Assert.Equal(["Discover", "InstallBridge", "InstallGlobal", "ConfigureByokInstall"], backend.Calls);
+    }
+
+    [Fact]
+    public async Task BridgeUpdateFailureLeavesExistingGlobalLoaderUntouched()
+    {
+        var backend = new FakeBackend { RejectBridge = true };
+        var store = new MemoryCoordinatorStateStore
+        {
+            State = new CoordinatorState(@"D:\Game", InstallMode.BridgeAndGlobal, "old", DateTimeOffset.UnixEpoch),
+        };
+        var coordinator = new InstallerCoordinator(backend, store);
+
+        var result = await coordinator.InstallAsync(InstallMode.BridgeAndGlobal, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(InstallMode.BridgeAndGlobal, store.State?.Mode);
+        Assert.Equal(["Discover", "InstallBridge"], backend.Calls);
     }
 
     [Fact]
@@ -87,6 +104,7 @@ public sealed class InstallerCoordinatorTests
     {
         public List<string> Calls { get; } = [];
         public bool RejectGlobal { get; set; }
+        public bool RejectBridge { get; set; }
 
         public Task<DiscoveryResult> DiscoverAsync(CancellationToken cancellationToken)
         {
@@ -96,6 +114,7 @@ public sealed class InstallerCoordinatorTests
         public Task InstallBridgeAsync(DiscoveryResult discovery, CancellationToken cancellationToken)
         {
             Calls.Add("InstallBridge");
+            if (RejectBridge) throw new IOException("fixture");
             return Task.CompletedTask;
         }
         public Task InstallGlobalAsync(DiscoveryResult discovery, CancellationToken cancellationToken)

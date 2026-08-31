@@ -21,6 +21,11 @@ constexpr std::uint32_t kMaximumAsarHeader = 32U * 1024U * 1024U;
 
 LoaderState g_loader_state;
 decltype(&CreateFileW) g_original_create_file_w = nullptr;
+void* g_entry_point = nullptr;
+std::uint8_t g_original_entry_byte = 0;
+PVOID g_entry_handler = nullptr;
+volatile LONG g_entry_hook_armed = 0;
+std::string g_expected_asar_hash;
 
 std::string BytesToHex(const std::uint8_t* bytes, std::size_t size) {
     static constexpr char digits[] = "0123456789abcdef";
@@ -128,6 +133,45 @@ cleanup:
     return success;
 }
 
+bool ReadExpectedAsarHashFromResource(std::string* output) {
+    HMODULE image = GetModuleHandleW(nullptr);
+    if (!image || !output) return false;
+    HRSRC resource = FindResourceW(image, L"ELECTRONASAR", L"INTEGRITY");
+    if (!resource) return false;
+    const DWORD size = SizeofResource(image, resource);
+    HGLOBAL loaded = LoadResource(image, resource);
+    const auto* data = static_cast<const char*>(LockResource(loaded));
+    return data && size > 0 && ExtractExpectedAsarHashFromIntegrityJson(data, size, output);
+}
+
+bool PatchIntegrityResourceHash(const std::string& from, const std::string& to) {
+    if (!IsLowerHexHash(from) || !IsLowerHexHash(to)) return false;
+    HMODULE image = GetModuleHandleW(nullptr);
+    if (!image) return false;
+    HRSRC resource = FindResourceW(image, L"ELECTRONASAR", L"INTEGRITY");
+    if (!resource) return false;
+    const DWORD size = SizeofResource(image, resource);
+    HGLOBAL loaded = LoadResource(image, resource);
+    auto* data = static_cast<std::uint8_t*>(LockResource(loaded));
+    if (!data || size < from.size()) return false;
+    std::uint8_t* match = nullptr;
+    unsigned count = 0;
+    for (std::size_t offset = 0; offset + from.size() <= size; ++offset) {
+        if (std::memcmp(data + offset, from.data(), from.size()) == 0) {
+            match = data + offset;
+            ++count;
+        }
+    }
+    if (count != 1 || !match) return false;
+    DWORD old_protection = 0;
+    if (!VirtualProtect(match, from.size(), PAGE_READWRITE, &old_protection)) return false;
+    std::memcpy(match, to.data(), to.size());
+    DWORD ignored = 0;
+    const BOOL restored = VirtualProtect(match, from.size(), old_protection, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), match, from.size());
+    return restored == TRUE;
+}
+
 bool PatchImport(const char* function_name, void* replacement, void** original) {
     auto* image = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
     if (!image) return false;
@@ -181,6 +225,67 @@ HANDLE WINAPI RedirectedCreateFileW(
         creation_disposition, flags_and_attributes, template_file);
 }
 
+LONG CALLBACK EntryPointHookHandler(EXCEPTION_POINTERS* exception) {
+    if (!exception || !exception->ExceptionRecord || !exception->ContextRecord ||
+        exception->ExceptionRecord->ExceptionCode != EXCEPTION_BREAKPOINT ||
+        exception->ExceptionRecord->ExceptionAddress != g_entry_point ||
+        InterlockedCompareExchange(&g_entry_hook_armed, 0, 1) != 1) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    DWORD old_protection = 0;
+    if (!VirtualProtect(g_entry_point, 1, PAGE_EXECUTE_READWRITE, &old_protection)) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    *static_cast<volatile std::uint8_t*>(g_entry_point) = g_original_entry_byte;
+    DWORD ignored = 0;
+    const BOOL restored = VirtualProtect(g_entry_point, 1, old_protection, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), g_entry_point, 1);
+    if (!restored) return EXCEPTION_CONTINUE_SEARCH;
+
+    if (!InstallSidecarHooks(g_loader_state)) {
+        RestoreExpectedAsarHashInMemory(g_loader_state);
+    }
+#if defined(_M_X64)
+    exception->ContextRecord->Rip = reinterpret_cast<DWORD64>(g_entry_point);
+#else
+#error The sidecar loader only supports x64 builds.
+#endif
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+bool ArmSidecarHooksAtAddress(const LoaderState& state, void* address) {
+    if (!address || InterlockedCompareExchange(&g_entry_hook_armed, 1, 0) != 0) return false;
+    g_loader_state = state;
+    g_entry_point = address;
+    g_original_entry_byte = *static_cast<const std::uint8_t*>(address);
+    g_entry_handler = AddVectoredExceptionHandler(1, &EntryPointHookHandler);
+    if (!g_entry_handler) {
+        InterlockedExchange(&g_entry_hook_armed, 0);
+        return false;
+    }
+    DWORD old_protection = 0;
+    if (!VirtualProtect(address, 1, PAGE_EXECUTE_READWRITE, &old_protection)) {
+        RemoveVectoredExceptionHandler(g_entry_handler);
+        g_entry_handler = nullptr;
+        InterlockedExchange(&g_entry_hook_armed, 0);
+        return false;
+    }
+    *static_cast<volatile std::uint8_t*>(address) = 0xcc;
+    DWORD ignored = 0;
+    const BOOL restored = VirtualProtect(address, 1, old_protection, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), address, 1);
+    if (!restored) {
+        *static_cast<volatile std::uint8_t*>(address) = g_original_entry_byte;
+        VirtualProtect(address, 1, old_protection, &ignored);
+        RemoveVectoredExceptionHandler(g_entry_handler);
+        g_entry_handler = nullptr;
+        InterlockedExchange(&g_entry_hook_armed, 0);
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
 
 std::array<std::uint8_t, 32> HexToBytes(const std::string& value) {
@@ -193,6 +298,73 @@ std::array<std::uint8_t, 32> HexToBytes(const std::string& value) {
         result[index] = static_cast<std::uint8_t>((digit(value[index * 2]) << 4U) | digit(value[index * 2 + 1]));
     }
     return result;
+}
+
+bool ExtractExpectedAsarHashFromIntegrityJson(
+    const char* data,
+    std::size_t size,
+    std::string* output) noexcept {
+    try {
+        if (!data || size == 0 || !output) return false;
+        const std::string json(data, size);
+        auto read_string = [&json](std::size_t begin, std::size_t end, const char* key, std::string* value) {
+            const std::string tag = std::string("\"") + key + "\"";
+            std::size_t position = begin;
+            while ((position = json.find(tag, position)) != std::string::npos && position < end) {
+                position += tag.size();
+                while (position < end && std::isspace(static_cast<unsigned char>(json[position]))) ++position;
+                if (position >= end || json[position] != ':') continue;
+                ++position;
+                while (position < end && std::isspace(static_cast<unsigned char>(json[position]))) ++position;
+                if (position >= end || json[position] != '"') continue;
+                ++position;
+                std::string decoded;
+                while (position < end) {
+                    const char current = json[position++];
+                    if (current == '"') {
+                        *value = std::move(decoded);
+                        return true;
+                    }
+                    if (current == '\\') {
+                        if (position >= end) return false;
+                        const char escaped = json[position++];
+                        if (escaped != '\\' && escaped != '"' && escaped != '/') return false;
+                        decoded.push_back(escaped);
+                    } else {
+                        decoded.push_back(current);
+                    }
+                }
+                return false;
+            }
+            return false;
+        };
+        std::size_t search = 0;
+        std::string match;
+        unsigned count = 0;
+        while ((search = json.find('{', search)) != std::string::npos) {
+            const std::size_t object_end = json.find('}', search + 1);
+            if (object_end == std::string::npos) return false;
+            std::string file;
+            std::string algorithm;
+            std::string candidate;
+            if (read_string(search + 1, object_end, "file", &file) &&
+                read_string(search + 1, object_end, "alg", &algorithm) &&
+                read_string(search + 1, object_end, "value", &candidate)) {
+                std::replace(file.begin(), file.end(), '/', '\\');
+                if (_stricmp(file.c_str(), "resources\\app.asar") == 0 &&
+                    algorithm == "SHA256" && IsLowerHexHash(candidate)) {
+                    match = std::move(candidate);
+                    ++count;
+                }
+            }
+            search = object_end + 1;
+        }
+        if (count != 1) return false;
+        *output = std::move(match);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 bool ComputeAsarHeaderSha256(const wchar_t* path, std::string* output) noexcept {
@@ -277,39 +449,19 @@ bool ShouldRedirectRead(
 
 bool PatchExpectedAsarHashInMemory(const LoaderState& state) noexcept {
     try {
-        if (!IsLowerHexHash(state.source_header_sha256) || !IsLowerHexHash(state.sidecar_header_sha256)) return false;
-        auto* image = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
-        if (!image) return false;
-        auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(image);
-        if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
-        auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
-        if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
-        IMAGE_SECTION_HEADER* resource = nullptr;
-        auto* sections = IMAGE_FIRST_SECTION(nt);
-        for (WORD index = 0; index < nt->FileHeader.NumberOfSections; ++index) {
-            char name[IMAGE_SIZEOF_SHORT_NAME + 1]{};
-            std::memcpy(name, sections[index].Name, IMAGE_SIZEOF_SHORT_NAME);
-            if (std::strcmp(name, ".rsrc") == 0) { resource = &sections[index]; break; }
-        }
-        if (!resource) return false;
-        auto* start = image + resource->VirtualAddress;
-        const std::size_t size = resource->Misc.VirtualSize;
-        std::uint8_t* match = nullptr;
-        unsigned count = 0;
-        for (std::size_t offset = 0; offset + state.source_header_sha256.size() <= size; ++offset) {
-            if (std::memcmp(start + offset, state.source_header_sha256.data(), state.source_header_sha256.size()) == 0) {
-                match = start + offset;
-                ++count;
-            }
-        }
-        if (count != 1 || !match) return false;
-        DWORD old_protection = 0;
-        if (!VirtualProtect(match, state.source_header_sha256.size(), PAGE_READWRITE, &old_protection)) return false;
-        std::memcpy(match, state.sidecar_header_sha256.data(), state.sidecar_header_sha256.size());
-        DWORD ignored = 0;
-        const BOOL restored = VirtualProtect(match, state.source_header_sha256.size(), old_protection, &ignored);
-        FlushInstructionCache(GetCurrentProcess(), match, state.source_header_sha256.size());
-        return restored == TRUE;
+        std::string expected;
+        if (!ReadExpectedAsarHashFromResource(&expected)) return false;
+        g_expected_asar_hash = expected;
+        return PatchIntegrityResourceHash(expected, state.sidecar_header_sha256);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool RestoreExpectedAsarHashInMemory(const LoaderState& state) noexcept {
+    try {
+        return IsLowerHexHash(g_expected_asar_hash) &&
+            PatchIntegrityResourceHash(state.sidecar_header_sha256, g_expected_asar_hash);
     } catch (...) {
         return false;
     }
@@ -323,6 +475,28 @@ bool InstallSidecarHooks(const LoaderState& state) noexcept {
         if (!PatchImport("CreateFileW", reinterpret_cast<void*>(&RedirectedCreateFileW), &original)) return false;
         g_original_create_file_w = reinterpret_cast<decltype(&CreateFileW)>(original);
         return g_original_create_file_w != nullptr;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool ArmSidecarHooksAtProcessEntry(const LoaderState& state) noexcept {
+    try {
+        auto* image = reinterpret_cast<std::uint8_t*>(GetModuleHandleW(nullptr));
+        if (!image) return false;
+        auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(image);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+        auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.AddressOfEntryPoint == 0) return false;
+        return ArmSidecarHooksAtAddress(state, image + nt->OptionalHeader.AddressOfEntryPoint);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool ArmSidecarHooksAtAddressForTesting(const LoaderState& state, void* address) noexcept {
+    try {
+        return ArmSidecarHooksAtAddress(state, address);
     } catch (...) {
         return false;
     }

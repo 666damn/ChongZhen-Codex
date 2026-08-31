@@ -66,7 +66,8 @@ public sealed class PatchService
         CancellationToken cancellationToken)
     {
         var previous = stateStore.Load();
-        if (previous is not null) await RestoreAsync(game, previous, cancellationToken);
+        if (previous?.InstalledSha256.ContainsKey("resources/app.asar") == true)
+            await RestoreAsync(game, previous, cancellationToken);
 
         var executableHash = Hashing.Sha256(game.ExecutablePath);
         var asarHash = Hashing.Sha256(game.AsarPath);

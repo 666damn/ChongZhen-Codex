@@ -31,10 +31,11 @@ public sealed class InstallerCoordinator(IInstallerBackend backend, ICoordinator
             var discovery = await backend.DiscoverAsync(cancellationToken);
             if (discovery.GameRunning) return new(false, "游戏正在运行，请先退出游戏后再安装。", await backend.GetStatusAsync(cancellationToken));
             var previous = stateStore.Load();
-            if (previous?.Mode == InstallMode.BridgeAndGlobal)
-                await backend.RestoreGlobalAsync(previous.GamePath, cancellationToken);
             await backend.InstallBridgeAsync(discovery, cancellationToken);
-            if (mode == InstallMode.BridgeAndGlobal) await backend.InstallGlobalAsync(discovery, cancellationToken);
+            if (mode == InstallMode.BridgeAndGlobal)
+                await backend.InstallGlobalAsync(discovery, cancellationToken);
+            else if (previous?.Mode == InstallMode.BridgeAndGlobal)
+                await backend.RestoreGlobalAsync(previous.GamePath, cancellationToken);
             await backend.ConfigureByokAsync(discovery, true, cancellationToken);
             stateStore.Save(new(discovery.GamePath, mode, "1.0.0", DateTimeOffset.UtcNow));
             return new(true, mode == InstallMode.BridgeOnly ? "仅 Codex 桥接安装完成。" : "Codex 桥接与全球分流安装完成。",

@@ -13,11 +13,12 @@ bool InitializeSidecarLoader() {
     if (wcscat_s(local_app_data, L"\\ChongZhenCodexBridge") != 0) return false;
     LoaderState state{};
     if (!TryLoadValidatedSidecar(executable_path, local_app_data, &state)) return false;
-    if (!PatchExpectedAsarHashInMemory(state)) return false;
-    if (InstallSidecarHooks(state)) return true;
-    LoaderState rollback = state;
-    std::swap(rollback.source_header_sha256, rollback.sidecar_header_sha256);
-    PatchExpectedAsarHashInMemory(rollback);
+    if (!PatchExpectedAsarHashInMemory(state)) {
+        RestoreExpectedAsarHashInMemory(state);
+        return false;
+    }
+    if (ArmSidecarHooksAtProcessEntry(state)) return true;
+    RestoreExpectedAsarHashInMemory(state);
     return false;
 }
 

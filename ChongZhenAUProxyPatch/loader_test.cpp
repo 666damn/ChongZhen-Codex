@@ -77,6 +77,19 @@ std::string ReadViaCreateFile(const fs::path& path) {
 }  // namespace
 
 int wmain() {
+    const std::string expected_hash(64, 'a');
+    const std::string integrity_json =
+        "[{\"file\":\"resources\\\\other.asar\",\"alg\":\"SHA256\",\"value\":\"" + std::string(64, 'b') +
+        "\"},{ \"value\" : \"" + expected_hash + "\", \"alg\" : \"SHA256\", \"file\" : \"resources/app.asar\" }]";
+    std::string extracted_hash;
+    Require(ExtractExpectedAsarHashFromIntegrityJson(
+        integrity_json.data(), integrity_json.size(), &extracted_hash), "integrity resource hash extraction failed");
+    Require(extracted_hash == expected_hash, "wrong integrity resource hash extracted");
+    const std::string wrong_algorithm =
+        "[{\"file\":\"resources\\\\app.asar\",\"alg\":\"SHA1\",\"value\":\"" + expected_hash + "\"}]";
+    Require(!ExtractExpectedAsarHashFromIntegrityJson(
+        wrong_algorithm.data(), wrong_algorithm.size(), &extracted_hash), "non-SHA256 integrity entry was accepted");
+
     const auto root = fs::temp_directory_path() / (L"cz-loader-test-" + std::to_wstring(GetCurrentProcessId()));
     fs::remove_all(root);
     const auto game = root / L"game";
@@ -112,9 +125,14 @@ int wmain() {
     Require(!TryLoadValidatedSidecar((game / L"ChongZhenSimulator.exe").c_str(), runtime.c_str(), &loaded), "stale source was accepted");
     WriteMinimalAsar(official, "official");
 
-    Require(InstallSidecarHooks(state), "IAT hook installation failed");
+    void* entry_stub = VirtualAlloc(nullptr, 1, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    Require(entry_stub != nullptr, "entry stub allocation failed");
+    *static_cast<unsigned char*>(entry_stub) = 0xc3;
+    Require(ArmSidecarHooksAtAddressForTesting(state, entry_stub), "entry hook arming failed");
+    reinterpret_cast<void (*)()>(entry_stub)();
     Require(ReadViaCreateFile(official).find("sidecar") != std::string::npos, "hook did not return sidecar bytes");
     Require(ReadViaCreateFile(game / L"resources" / L"app.asar.bak").empty() == false, "unrelated path test fixture missing");
+    Require(VirtualFree(entry_stub, 0, MEM_RELEASE) == TRUE, "entry stub release failed");
 
     fs::remove_all(root);
     std::puts("PASS: loader validation, fail-open behavior, and exact read redirection succeeded.");
