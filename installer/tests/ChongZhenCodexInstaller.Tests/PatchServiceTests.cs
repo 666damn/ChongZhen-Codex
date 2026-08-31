@@ -41,7 +41,8 @@ public sealed class PatchServiceTests : IDisposable
                 ["global/version.dll"] = new(TestFiles.Sha256(payloadDll), new FileInfo(payloadDll).Length),
             },
             [TestFiles.Sha256(exe)],
-            [Hashing.AsarHeaderSha256(asar)]);
+            [Hashing.AsarHeaderSha256(asar)],
+            [TestFiles.Sha256(version)]);
         var payload = new VerifiedPayload(manifest, payloadRoot);
         var service = new PatchService(new InstallStateStore(runtimeRoot), systemVersion);
 
@@ -86,6 +87,20 @@ public sealed class PatchServiceTests : IDisposable
         Assert.Equal(originalAsar, await File.ReadAllBytesAsync(fixture.Game.AsarPath));
     }
 
+    [Fact]
+    public async Task RefusesUnknownExistingVersionDllBeforeAnyGameFileReplacement()
+    {
+        var fixture = await CreateFixtureAsync();
+        var originalAsar = await File.ReadAllBytesAsync(fixture.Game.AsarPath);
+        await File.WriteAllBytesAsync(fixture.Game.VersionPath, [99, 99]);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Service.InstallGlobalAsync(
+            fixture.Game, fixture.Payload, FailurePoint.None, CancellationToken.None));
+
+        Assert.Equal(originalAsar, await File.ReadAllBytesAsync(fixture.Game.AsarPath));
+        Assert.Equal([99, 99], await File.ReadAllBytesAsync(fixture.Game.VersionPath));
+    }
+
     private async Task<(GameInstall Game, VerifiedPayload Payload, PatchService Service, InstallStateStore StateStore)> CreateFixtureAsync()
     {
         var id = Guid.NewGuid().ToString("N");
@@ -112,7 +127,8 @@ public sealed class PatchServiceTests : IDisposable
                 ["global/version.dll"] = new(TestFiles.Sha256(payloadDll), new FileInfo(payloadDll).Length),
             },
             [TestFiles.Sha256(game.ExecutablePath)],
-            [Hashing.AsarHeaderSha256(game.AsarPath)]);
+            [Hashing.AsarHeaderSha256(game.AsarPath)],
+            [TestFiles.Sha256(game.VersionPath)]);
         var stateStore = new InstallStateStore(runtimeRoot);
         return (game, new VerifiedPayload(manifest, payloadRoot), new PatchService(stateStore, systemVersion), stateStore);
     }

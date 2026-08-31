@@ -160,6 +160,10 @@ function parseArguments(argv) {
   return options;
 }
 
+export function resolveBridgeToken(options, environment = process.env) {
+  return options.token || environment.CHONGZHEN_BRIDGE_TOKEN;
+}
+
 export async function configure({ port, token, action }) {
   const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => {
     if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`);
@@ -206,12 +210,13 @@ export async function configure({ port, token, action }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const options = parseArguments(process.argv.slice(2));
-  if (!options.port || !['install', 'remove'].includes(options.action) || (options.action === 'install' && !options.token)) {
+  const token = resolveBridgeToken(options);
+  if (!options.port || !['install', 'remove'].includes(options.action) || (options.action === 'install' && !token)) {
     throw new Error('Usage: node configure-game-byok.mjs --port <port> --action install|remove [--token <token>]');
   }
   const result = await configure({
     port: Number(options.port),
-    token: options.token,
+    token,
     action: options.action,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

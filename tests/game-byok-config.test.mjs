@@ -5,6 +5,7 @@ import {
   findGameStorageTargets,
   mergeLocalCodexStrategy,
   removeLocalCodexStrategy,
+  resolveBridgeToken,
   transformGameStorage,
 } from '../scripts/configure-game-byok.mjs';
 
@@ -19,6 +20,11 @@ test('finds user-scoped game config and active strategy keys by their values', (
     configKey: 'llm_settings_user_42',
     activeStrategyKey: 'byok_active_strategy_key_user_42',
   });
+});
+
+test('reads the local bridge identifier from environment without putting it in process arguments', () => {
+  assert.equal(resolveBridgeToken({}, { CHONGZHEN_BRIDGE_TOKEN: 'environment-id' }), 'environment-id');
+  assert.equal(resolveBridgeToken({ token: 'explicit-id' }, { CHONGZHEN_BRIDGE_TOKEN: 'environment-id' }), 'explicit-id');
 });
 
 test('adds and selects local Codex without overwriting existing BYOK settings', () => {

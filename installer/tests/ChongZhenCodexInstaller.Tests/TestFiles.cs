@@ -48,6 +48,7 @@ internal static class TestFiles
                     files = manifestFiles,
                     supportedGameExeSha256 = Array.Empty<string>(),
                     supportedAsarHeaderSha256 = Array.Empty<string>(),
+                    supportedExistingVersionSha256 = Array.Empty<string>(),
                 }));
             }
             foreach (var pair in files)

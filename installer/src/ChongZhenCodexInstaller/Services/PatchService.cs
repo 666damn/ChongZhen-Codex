@@ -133,6 +133,12 @@ public sealed class PatchService
         var asarHeader = Hashing.AsarHeaderSha256(game.AsarPath);
         if (!manifest.SupportedAsarHeaderSha256.Contains(asarHeader, StringComparer.OrdinalIgnoreCase))
             throw new InvalidDataException("Unsupported game ASAR header hash.");
+        if (File.Exists(game.VersionPath))
+        {
+            var versionHash = Hashing.Sha256(game.VersionPath);
+            if (!manifest.SupportedExistingVersionSha256.Contains(versionHash, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidDataException("Unsupported existing version.dll hash.");
+        }
     }
 
     private static void ValidatePayloadFile(PayloadManifest manifest, string relativePath, string path)

@@ -8,8 +8,23 @@ public sealed record BridgeRuntimePaths(
     string RuntimeRoot,
     string NodePath,
     string BridgeMainPath,
+    string ConfigureGameByokPath,
     string ConfigPath,
-    string InstalledExecutablePath);
+    string InstalledExecutablePath)
+{
+    public static BridgeRuntimePaths FromRoot(string runtimeRoot)
+    {
+        var root = Path.GetFullPath(runtimeRoot);
+        var app = Path.Combine(root, "app");
+        return new(
+            root,
+            Path.Combine(app, "node.exe"),
+            Path.Combine(app, "src", "main.js"),
+            Path.Combine(app, "tools", "configure-game-byok.mjs"),
+            Path.Combine(root, "config.json"),
+            Path.Combine(root, "ChongZhenCodexInstaller.exe"));
+    }
+}
 
 public sealed class BridgeInstallService(string runtimeRoot, StartupService startupService)
 {
@@ -24,7 +39,9 @@ public sealed class BridgeInstallService(string runtimeRoot, StartupService star
             .Where(path => path.StartsWith("bridge/", StringComparison.Ordinal))
             .ToArray();
         if (bridgeFiles.Length == 0 || !bridgeFiles.Contains("bridge/node.exe") ||
-            !bridgeFiles.Contains("bridge/src/main.js") || !bridgeFiles.Contains("bridge/bridge-id.txt"))
+            !bridgeFiles.Contains("bridge/src/main.js") ||
+            !bridgeFiles.Contains("bridge/tools/configure-game-byok.mjs") ||
+            !bridgeFiles.Contains("bridge/bridge-id.txt"))
             throw new InvalidDataException("Bridge runtime payload is incomplete.");
 
         var bridgeId = (await File.ReadAllTextAsync(payload.GetPath("bridge/bridge-id.txt"), cancellationToken)).Trim();
@@ -78,6 +95,7 @@ public sealed class BridgeInstallService(string runtimeRoot, StartupService star
                 runtimeRoot,
                 Path.Combine(appRoot, "node.exe"),
                 Path.Combine(appRoot, "src", "main.js"),
+                Path.Combine(appRoot, "tools", "configure-game-byok.mjs"),
                 configPath,
                 installedExecutable);
         }
