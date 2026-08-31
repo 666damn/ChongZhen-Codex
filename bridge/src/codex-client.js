@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 import { JsonlRpcClient } from './jsonl-rpc.js';
 import { discoverCodexExecutable } from './codex-discovery.js';
@@ -18,7 +20,15 @@ export class CodexClient {
     if (this.rpc && !this.rpc.closed) return;
     const executable = this.executable ?? discoverCodexExecutable(this.env);
     const args = this.args ?? ['app-server', '--listen', 'stdio://'];
-    this.child = spawn(executable, args, {
+    let spawnExecutable = executable;
+    let spawnArgs = args;
+    if (process.platform === 'win32' && /\.cmd$/i.test(executable)) {
+      const npmEntry = join(dirname(executable), 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+      if (!existsSync(npmEntry)) throw new Error(`Unsupported Codex command wrapper: ${executable}`);
+      spawnExecutable = process.execPath;
+      spawnArgs = [npmEntry, ...args];
+    }
+    this.child = spawn(spawnExecutable, spawnArgs, {
       cwd: this.cwd,
       env: this.env,
       windowsHide: true,

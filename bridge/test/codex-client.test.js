@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -100,4 +100,19 @@ test('Codex discovery prefers the target computer PATH over a packaged executabl
     discoverCodexExecutable({ LOCALAPPDATA: root, PATH: pathDirectory }, { bundledPath: packagedCodex }),
     pathCodex,
   );
+});
+
+test('Windows npm codex.cmd launchers can run app-server RPC', { skip: process.platform !== 'win32' }, async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cz-codex-cmd-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const launcher = join(root, 'codex.cmd');
+  const npmEntry = join(root, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  await mkdir(join(root, 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
+  await writeFile(launcher, '@echo off\r\n');
+  await copyFile(fixture, npmEntry);
+  const client = new CodexClient({ executable: launcher });
+  t.after(() => client.close());
+
+  await client.start();
+  assert.equal(await client.isLoggedIn(), true);
 });
