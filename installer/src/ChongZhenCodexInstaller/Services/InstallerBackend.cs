@@ -36,9 +36,11 @@ public sealed class InstallerBackend : IInstallerBackend, IDisposable
     {
         try
         {
+            StopInstalledWatchers();
             var verified = EnsurePayload();
-            await new BridgeInstallService(runtimeRoot, startup)
+            var paths = await new BridgeInstallService(runtimeRoot, startup)
                 .InstallRuntimeAsync(verified, installerSource, cancellationToken);
+            StartInstalledWatcher(paths.InstalledExecutablePath);
         }
         catch
         {
@@ -158,6 +160,19 @@ public sealed class InstallerBackend : IInstallerBackend, IDisposable
             }
             finally { process.Dispose(); }
         }
+    }
+
+    private static void StartInstalledWatcher(string installedExecutable)
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = installedExecutable,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        start.ArgumentList.Add("--watch");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start the installed watcher.");
     }
 
     public void Dispose() => CleanupPayload();
