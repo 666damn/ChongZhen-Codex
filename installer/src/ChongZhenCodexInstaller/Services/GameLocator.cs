@@ -155,8 +155,7 @@ public sealed class GameLocator
             var fullPath = Path.GetFullPath(path);
             var executable = Path.Combine(fullPath, "ChongZhenSimulator.exe");
             if (!File.Exists(executable) ||
-                !File.Exists(Path.Combine(fullPath, "resources", "app.asar")) ||
-                !File.Exists(Path.Combine(fullPath, "version.dll"))) return false;
+                !File.Exists(Path.Combine(fullPath, "resources", "app.asar"))) return false;
             candidate = new(fullPath, source, File.GetLastWriteTimeUtc(executable));
             return true;
         }

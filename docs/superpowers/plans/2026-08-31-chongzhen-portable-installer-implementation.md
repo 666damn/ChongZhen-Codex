@@ -457,7 +457,7 @@ Expected: FAIL。
 
 - [ ] **Step 3: 实现 LocalAppData 安装与 HKCU Run**
 
-每台机器生成 32 字节随机 bridge token；配置文件 ACL 仅当前用户。运行时只包含干净 bridge 源码、Node 和工具依赖。`--watch` 每两秒检测游戏，桥接关闭宽限为六十秒。
+使用 Task 4 构建时新生成的发布专用回环桥接识别码，使预构建 ASAR 与本机桥接一致；它不是账号/API 登录凭据且不得复用开发电脑现有值。配置文件 ACL 仅当前用户。运行时只包含干净 bridge 源码、Node 和工具依赖。`--watch` 每两秒检测游戏，桥接关闭宽限为六十秒。
 
 - [ ] **Step 4: 运行测试并检查注册表 fixture**
 

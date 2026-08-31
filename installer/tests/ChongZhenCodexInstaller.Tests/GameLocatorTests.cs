@@ -51,6 +51,20 @@ public sealed class GameLocatorTests : IDisposable
         Assert.Contains(result, candidate => candidate.Path == game && candidate.Source == GameCandidateSource.DriveScan);
     }
 
+    [Fact]
+    public async Task AcceptsFreshSteamInstallBeforeProxyDllExists()
+    {
+        var path = Path.Combine(root, "fresh");
+        Directory.CreateDirectory(Path.Combine(path, "resources"));
+        File.WriteAllBytes(Path.Combine(path, "ChongZhenSimulator.exe"), [1]);
+        File.WriteAllBytes(Path.Combine(path, "resources", "app.asar"), [2]);
+
+        var result = await new GameLocator(new GameLocatorOptions(path, [], [])).FindAsync(CancellationToken.None);
+
+        Assert.Single(result);
+        Assert.Equal(Path.GetFullPath(path), result[0].Path);
+    }
+
     private static string CreateValidGame(string path)
     {
         Directory.CreateDirectory(Path.Combine(path, "resources"));

@@ -92,7 +92,8 @@ Steam App ID 固定为 `4304230`。定位顺序如下：
 
 - `ChongZhenSimulator.exe`
 - `resources\app.asar`
-- `version.dll`
+
+全新 Steam 安装尚未注入代理时可以没有 `version.dll`；若它已存在，安装器会把它视为待验证和备份的现有文件。
 
 存在多个候选时优先使用 Steam 当前登记的有效安装；仍不唯一时显示候选选择窗口。缓存失效或游戏被 Steam 移动后自动重新定位。
 
@@ -113,11 +114,11 @@ Steam App ID 固定为 `4304230`。定位顺序如下：
 
 ## 文件安全、备份与恢复
 
-全球分流模式安装前必须确认游戏进程已经退出，并验证受支持版本的 EXE、原始 ASAR 和原始 `version.dll` 哈希。
+全球分流模式安装前必须确认游戏进程已经退出，并验证受支持版本的 EXE、原始 ASAR，以及存在时的原 `version.dll` 哈希。
 
 安装流程为：
 
-1. 把原始 `app.asar` 和 `version.dll` 复制到 LocalAppData 的版本化备份目录。
+1. 把原始 `app.asar` 和存在的 `version.dll` 复制到 LocalAppData 的版本化备份目录；不存在的文件记录为“原先不存在”。
 2. 验证备份长度与 SHA-256 和源文件一致。
 3. 在游戏文件所在卷创建补丁临时文件并验证嵌入清单中的长度与 SHA-256。
 4. 使用同卷原子替换安装补丁。

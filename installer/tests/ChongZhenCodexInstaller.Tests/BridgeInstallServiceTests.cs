@@ -1,0 +1,93 @@
+using System.Text.Json;
+using ChongZhenCodexInstaller.Domain;
+using ChongZhenCodexInstaller.Services;
+
+namespace ChongZhenCodexInstaller.Tests;
+
+public sealed class BridgeInstallServiceTests : IDisposable
+{
+    private readonly string root = Path.Combine(Path.GetTempPath(), $"cz-bridge-install-{Guid.NewGuid():N}");
+
+    [Fact]
+    public async Task InstallsCleanRuntimeAndOnlyOperationalConfiguration()
+    {
+        var payloadRoot = Path.Combine(root, "payload");
+        var runtimeRoot = Path.Combine(root, "runtime");
+        var installerSource = Path.Combine(root, "source-installer.exe");
+        Directory.CreateDirectory(Path.Combine(payloadRoot, "bridge", "src"));
+        await File.WriteAllBytesAsync(Path.Combine(payloadRoot, "bridge", "node.exe"), [1]);
+        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "src", "main.js"), "// clean fixture");
+        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "bridge-id.txt"), $"czb_{new string('a', 64)}\n");
+        await File.WriteAllBytesAsync(installerSource, [9]);
+        var manifest = new PayloadManifest(
+            "test",
+            Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories).ToDictionary(
+                file => Path.GetRelativePath(payloadRoot, file).Replace('\\', '/'),
+                file => new PayloadFile(TestFiles.Sha256(file), new FileInfo(file).Length)),
+            [], []);
+        var startup = new StartupService(new FakeStartupRegistry());
+        var service = new BridgeInstallService(runtimeRoot, startup);
+
+        var result = await service.InstallRuntimeAsync(new VerifiedPayload(manifest, payloadRoot), installerSource, CancellationToken.None);
+
+        Assert.True(File.Exists(result.NodePath));
+        Assert.True(File.Exists(result.BridgeMainPath));
+        Assert.Equal([9], await File.ReadAllBytesAsync(result.InstalledExecutablePath));
+        using var config = JsonDocument.Parse(await File.ReadAllTextAsync(result.ConfigPath));
+        Assert.Equal(43129, config.RootElement.GetProperty("port").GetInt32());
+        Assert.Equal($"czb_{new string('a', 64)}", config.RootElement.GetProperty("token").GetString());
+        var serialized = config.RootElement.GetRawText();
+        Assert.DoesNotContain("account", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("session", serialized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("access_token", serialized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RegistersOnlyTheInstalledWatcherCommandInHkcuRunAbstraction()
+    {
+        var registry = new FakeStartupRegistry();
+        var service = new StartupService(registry);
+
+        service.Enable(@"C:\Runtime\ChongZhenCodexInstaller.exe");
+        Assert.Equal("\"C:\\Runtime\\ChongZhenCodexInstaller.exe\" --watch", registry.Value);
+        service.Disable();
+        Assert.Null(registry.Value);
+    }
+
+    [Fact]
+    public async Task RestoresPreviousRuntimeWhenInstallationFailsAfterDirectorySwap()
+    {
+        var payloadRoot = Path.Combine(root, "rollback-payload");
+        var runtimeRoot = Path.Combine(root, "rollback-runtime");
+        Directory.CreateDirectory(Path.Combine(payloadRoot, "bridge", "src"));
+        Directory.CreateDirectory(Path.Combine(runtimeRoot, "app"));
+        await File.WriteAllTextAsync(Path.Combine(runtimeRoot, "app", "node.exe"), "old-runtime");
+        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "node.exe"), "new-runtime");
+        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "src", "main.js"), "// fixture");
+        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "bridge-id.txt"), $"czb_{new string('b', 64)}");
+        var manifest = new PayloadManifest(
+            "test",
+            Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories).ToDictionary(
+                file => Path.GetRelativePath(payloadRoot, file).Replace('\\', '/'),
+                file => new PayloadFile(TestFiles.Sha256(file), new FileInfo(file).Length)),
+            [], []);
+        var service = new BridgeInstallService(runtimeRoot, new StartupService(new FakeStartupRegistry()));
+
+        await Assert.ThrowsAsync<FileNotFoundException>(() => service.InstallRuntimeAsync(
+            new VerifiedPayload(manifest, payloadRoot), Path.Combine(root, "missing-installer.exe"), CancellationToken.None));
+
+        Assert.Equal("old-runtime", await File.ReadAllTextAsync(Path.Combine(runtimeRoot, "app", "node.exe")));
+    }
+
+    private sealed class FakeStartupRegistry : IStartupRegistry
+    {
+        public string? Value { get; private set; }
+        public void Set(string name, string value) => Value = value;
+        public void Delete(string name) => Value = null;
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(root)) Directory.Delete(root, true);
+    }
+}
