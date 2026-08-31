@@ -19,6 +19,12 @@ public sealed class InstallStateStore
     }
 
     public void Save(PatchInstallState state)
+        => SaveSerialized(state);
+
+    public void Save(LoaderInstallState state)
+        => SaveSerialized(state);
+
+    private void SaveSerialized<T>(T state)
     {
         Directory.CreateDirectory(RootPath);
         var temporary = StatePath + $".writing-{Guid.NewGuid():N}";
@@ -36,6 +42,24 @@ public sealed class InstallStateStore
     public PatchInstallState? Load() => File.Exists(StatePath)
         ? JsonSerializer.Deserialize<PatchInstallState>(File.ReadAllText(StatePath), JsonOptions)
         : null;
+
+    public PatchInstallState? LoadLegacy()
+    {
+        var state = Load();
+        return state?.InstalledSha256.ContainsKey("resources/app.asar") == true ? state : null;
+    }
+
+    public LoaderInstallState? LoadLoader()
+    {
+        var state = Load();
+        if (state is null || state.InstalledSha256.ContainsKey("resources/app.asar")) return null;
+        return new(
+            state.GamePath,
+            state.Version,
+            state.Originals,
+            state.InstalledSha256,
+            state.InstalledAt);
+    }
 
     public void Remove() => File.Delete(StatePath);
 }

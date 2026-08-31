@@ -17,3 +17,10 @@ public sealed record PatchInstallState(
     IReadOnlyDictionary<string, OriginalFileState> Originals,
     IReadOnlyDictionary<string, string> InstalledSha256,
     DateTimeOffset InstalledAt);
+
+public sealed record LoaderInstallState(
+    string GamePath,
+    string Version,
+    IReadOnlyDictionary<string, OriginalFileState> Originals,
+    IReadOnlyDictionary<string, string> InstalledSha256,
+    DateTimeOffset InstalledAt);
