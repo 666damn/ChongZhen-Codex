@@ -21,6 +21,12 @@ static class Program
             catch { Environment.ExitCode = 1; }
             return;
         }
+        if (options.Command == AppCommand.RefreshSidecar)
+        {
+            try { await InstallerRuntime.RefreshSidecarAsync(CancellationToken.None); }
+            catch { Environment.ExitCode = 1; }
+            return;
+        }
 
         ApplicationConfiguration.Initialize();
         try

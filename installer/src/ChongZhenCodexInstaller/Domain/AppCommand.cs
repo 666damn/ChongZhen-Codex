@@ -9,4 +9,5 @@ public enum AppCommand
     InstallGlobal,
     Uninstall,
     AuditPayload,
+    RefreshSidecar,
 }

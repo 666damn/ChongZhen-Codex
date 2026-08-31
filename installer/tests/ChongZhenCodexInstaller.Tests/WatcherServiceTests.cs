@@ -5,6 +5,37 @@ namespace ChongZhenCodexInstaller.Tests;
 public sealed class WatcherServiceTests
 {
     [Fact]
+    public async Task RefreshesSidecarInitiallyAndAtTheConfiguredIntervalOnlyWhileGameIsStopped()
+    {
+        var processes = new FakeProcessService();
+        var watcher = new WatcherService(
+            processes,
+            TimeSpan.FromSeconds(60),
+            refreshInterval: TimeSpan.FromSeconds(30));
+
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch, CancellationToken.None);
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch.AddSeconds(29), CancellationToken.None);
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch.AddSeconds(30), CancellationToken.None);
+
+        Assert.Equal(2, processes.RefreshCount);
+    }
+
+    [Fact]
+    public async Task NeverRefreshesSidecarWhileGameIsRunningAndRefreshesImmediatelyAfterExit()
+    {
+        var processes = new FakeProcessService { GameRunning = true };
+        var watcher = new WatcherService(processes, TimeSpan.FromSeconds(60));
+
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch, CancellationToken.None);
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch.AddSeconds(2), CancellationToken.None);
+        Assert.Equal(0, processes.RefreshCount);
+        processes.GameRunning = false;
+        await watcher.TickAsync(DateTimeOffset.UnixEpoch.AddSeconds(4), CancellationToken.None);
+
+        Assert.Equal(1, processes.RefreshCount);
+    }
+
+    [Fact]
     public async Task StartsBridgeOnceWhenGameAppears()
     {
         var processes = new FakeProcessService { GameRunning = true };
@@ -51,6 +82,7 @@ public sealed class WatcherServiceTests
         public bool BridgeRunning { get; set; }
         public int StartCount { get; private set; }
         public int StopCount { get; private set; }
+        public int RefreshCount { get; private set; }
 
         public bool IsGameRunning() => GameRunning;
         public bool IsBridgeRunning(BridgeProcessHandle handle) => BridgeRunning;
@@ -64,6 +96,11 @@ public sealed class WatcherServiceTests
         {
             StopCount++;
             BridgeRunning = false;
+            return Task.CompletedTask;
+        }
+        public Task RefreshSidecarAsync(CancellationToken cancellationToken)
+        {
+            RefreshCount++;
             return Task.CompletedTask;
         }
     }

@@ -11,6 +11,7 @@ public interface IProcessService
     BridgeProcessHandle StartBridge();
     bool IsBridgeRunning(BridgeProcessHandle handle);
     Task StopBridgeAsync(BridgeProcessHandle handle, CancellationToken cancellationToken);
+    Task RefreshSidecarAsync(CancellationToken cancellationToken);
 }
 
 public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, IDisposable
@@ -75,6 +76,21 @@ public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, 
         {
             if (children.TryRemove(handle.ProcessId, out var removed)) removed.Dispose();
         }
+    }
+
+    public async Task RefreshSidecarAsync(CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = paths.InstalledExecutablePath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        start.ArgumentList.Add("--refresh-sidecar");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start sidecar refresh process.");
+        await process.WaitForExitAsync(cancellationToken);
+        if (process.ExitCode != 0) throw new InvalidOperationException("Sidecar refresh process failed.");
     }
 
     public void Dispose()

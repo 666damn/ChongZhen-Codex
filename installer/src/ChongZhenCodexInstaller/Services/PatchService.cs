@@ -42,7 +42,7 @@ public sealed class PatchService
         var paths = BridgeRuntimePaths.FromRoot(stateStore.RootPath);
         sidecarService = new SidecarService(
             stateStore.RootPath,
-            new NodeSidecarPatcher(paths.NodePath, Path.Combine(stateStore.RootPath, "app", "patcher", "src", "build-sidecar.mjs")));
+            new NodeSidecarPatcher(paths.NodePath, paths.PatcherScriptPath));
         secretStore = new BridgeSecretStore(stateStore.RootPath);
         loaderInstallService = new LoaderInstallService(stateStore, systemVersionPath);
     }

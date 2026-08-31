@@ -12,6 +12,8 @@ public sealed record BridgeRuntimePaths(
     string ConfigPath,
     string InstalledExecutablePath)
 {
+    public string PatcherScriptPath => Path.Combine(RuntimeRoot, "app", "patcher", "src", "build-sidecar.mjs");
+
     public static BridgeRuntimePaths FromRoot(string runtimeRoot)
     {
         var root = Path.GetFullPath(runtimeRoot);
