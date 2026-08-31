@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-const requireFromBridge = createRequire(new URL('../bridge/package.json', import.meta.url));
-const asar = requireFromBridge('@electron/asar');
+const requireFromPatcher = createRequire(new URL('../patcher/package.json', import.meta.url));
+const asar = requireFromPatcher('@electron/asar');
 
 function digest(buffer) {
   return createHash('sha256').update(buffer).digest('hex');

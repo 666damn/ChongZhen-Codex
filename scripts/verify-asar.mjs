@@ -1,8 +1,8 @@
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 
-const requireFromBridge = createRequire(new URL('../bridge/package.json', import.meta.url));
-const asar = requireFromBridge('@electron/asar');
+const requireFromPatcher = createRequire(new URL('../patcher/package.json', import.meta.url));
+const asar = requireFromPatcher('@electron/asar');
 
 export function verifyAsarContent(asarPath) {
   const entries = asar.listPackage(asarPath);

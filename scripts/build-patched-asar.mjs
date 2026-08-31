@@ -9,8 +9,8 @@ import { patchRegionRouting } from './patch-region.mjs';
 import { patchRenderer } from './patch-renderer.mjs';
 import { verifyAsarContent } from './verify-asar.mjs';
 
-const requireFromBridge = createRequire(new URL('../bridge/package.json', import.meta.url));
-const asar = requireFromBridge('@electron/asar');
+const requireFromPatcher = createRequire(new URL('../patcher/package.json', import.meta.url));
+const asar = requireFromPatcher('@electron/asar');
 
 function parseArguments(argv) {
   const options = {};
