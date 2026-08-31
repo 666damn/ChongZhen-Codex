@@ -12,6 +12,7 @@ test('final ASAR contains AU region and authenticated Codex bridge patches toget
 
   assert.match(result.rendererEntry, /out[\\/]renderer[\\/]js[\\/]index-.*\.js$/i);
   assert.equal(result.hasAuRegion, true);
+  assert.equal(result.hasGlobalRegion, true);
   assert.equal(result.hasBridgeEndpoint, true);
   assert.equal(result.hasConversationContext, true);
   assert.equal(result.hasForcedByok, true);

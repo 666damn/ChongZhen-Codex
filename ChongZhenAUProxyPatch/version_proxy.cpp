@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <cstdint>
 #include <cstring>
+#include "generated_asar.h"
 
 namespace {
 
@@ -9,9 +10,8 @@ constexpr char kOriginalEmbeddedHash[] =
 constexpr char kPatchedAsarHeaderHash[] =
     "083b4f00ede7f8bab0f1558c3ab2fec05221a63e915ea9414e51aeb63a863abe";
 constexpr std::uint64_t kPatchedAsarSize = 469836514ULL;
-constexpr char kCodexAsarHeaderHash[] =
-    "ee85b1ae1fecc337e575015993e76e603f8ae291043ca9e9e3ab3a73c4a06ef4";
-constexpr std::uint64_t kCodexAsarSize = 469836834ULL;
+constexpr char kCodexAsarHeaderHash[] = CHONGZHEN_CODEX_ASAR_HEADER_HASH;
+constexpr std::uint64_t kCodexAsarSize = CHONGZHEN_CODEX_ASAR_SIZE;
 
 const char* GetInstalledPatchedAsarHash() {
     wchar_t executablePath[MAX_PATH] = {};

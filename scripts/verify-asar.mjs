@@ -19,6 +19,7 @@ export function verifyAsarContent(asarPath) {
     rendererEntry,
     rendererBytes: Buffer.byteLength(renderer),
     hasAuRegion: /const GLOBAL_COUNTRIES\s*=\s*\["HK",\s*"MO",\s*"AU"\]/.test(renderer),
+    hasGlobalRegion: /if \(GLOBAL_COUNTRIES\.includes\(upper\)\) return 2;\s*return 2;/.test(renderer),
     hasBridgeEndpoint: renderer.includes('http://127.0.0.1:43129/v1/chat/completions'),
     hasConversationContext: renderer.includes('_chongzhen_context'),
     hasForcedByok: renderer.includes('codexByokEnabledBackingAtom'),
