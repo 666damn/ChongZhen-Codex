@@ -16,7 +16,7 @@ class FixtureCodex {
     this.resumed = [];
   }
 
-  async readAccount() { return this.account; }
+  async isLoggedIn() { return Boolean(this.account); }
   async startThread() { return `thread-${this.nextThread++}`; }
   async resumeThread(threadId) { this.resumed.push(threadId); return threadId; }
   async runTurn(threadId, prompt) {

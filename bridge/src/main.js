@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { BridgeService } from './bridge-service.js';
 import { CodexClient } from './codex-client.js';
 import { createHttpServer } from './http-server.js';
+import { buildReadyStatus } from './ready-status.js';
 import { StateStore } from './state-store.js';
 
 const runtimeRoot = process.env.CHONGZHEN_BRIDGE_HOME
@@ -48,19 +49,12 @@ process.once('unhandledRejection', (error) => {
 server.listen(port, '127.0.0.1', async () => {
   try {
     await codex.start();
-    const account = await codex.readAccount();
-    const configuredModel = await codex.readCurrentModel();
-    writeFileSync(readyPath, JSON.stringify({
+    if (!await codex.isLoggedIn()) throw new Error('Codex CLI is not logged in');
+    writeFileSync(readyPath, JSON.stringify(buildReadyStatus({
       pid: process.pid,
       port,
-      accountType: account?.type ?? null,
-      planType: account?.planType ?? null,
-      modelMode: 'follow-local-codex',
-      configuredModel,
-      defaultModel: codex.defaultModel,
-      currentModel: configuredModel ?? codex.defaultModel,
       startedAt: new Date().toISOString(),
-    }, null, 2));
+    }), null, 2));
     process.stdout.write(`ChongZhen Codex Bridge ready on 127.0.0.1:${port}\n`);
   } catch (error) {
     process.stderr.write(`Codex startup failed: ${error.message}\n`);

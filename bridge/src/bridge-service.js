@@ -32,8 +32,7 @@ export class BridgeService {
   }
 
   async handleChatCompletion(body, signal) {
-    const account = await this.codex.readAccount();
-    if (!account) {
+    if (!await this.codex.isLoggedIn()) {
       throw Object.assign(new Error('请先在 Codex 中登录 ChatGPT 账号'), {
         status: 503,
         type: 'authentication_error',

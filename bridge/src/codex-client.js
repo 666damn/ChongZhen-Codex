@@ -40,10 +40,10 @@ export class CodexClient {
     this.defaultModel = models.data?.find((candidate) => candidate.isDefault)?.id ?? null;
   }
 
-  async readAccount() {
+  async isLoggedIn() {
     await this.start();
     const result = await this.rpc.request('account/read', { refreshToken: false });
-    return result.account;
+    return Boolean(result.account);
   }
 
   async readCurrentModel() {

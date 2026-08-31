@@ -1,15 +1,8 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const DEFAULT_BUNDLED_PATH = fileURLToPath(new URL(
-  '../node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe',
-  import.meta.url,
-));
-
-export function discoverCodexExecutable(env = process.env, { bundledPath = DEFAULT_BUNDLED_PATH } = {}) {
+export function discoverCodexExecutable(env = process.env) {
   if (env.CHONGZHEN_CODEX_PATH && existsSync(env.CHONGZHEN_CODEX_PATH)) return env.CHONGZHEN_CODEX_PATH;
-  if (existsSync(bundledPath)) return bundledPath;
   for (const directory of String(env.PATH ?? '').split(delimiter).filter(Boolean)) {
     const candidate = join(directory, 'codex.exe');
     if (existsSync(candidate)) return candidate;

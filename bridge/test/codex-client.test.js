@@ -10,7 +10,7 @@ import { discoverCodexExecutable } from '../src/codex-discovery.js';
 
 const fixture = fileURLToPath(new URL('./fixtures/fake-app-server.js', import.meta.url));
 
-test('Codex client initializes, reads the active account, and completes a turn', async (t) => {
+test('Codex client initializes, checks login without exposing account data, and completes a turn', async (t) => {
   const client = new CodexClient({ executable: process.execPath, args: [fixture] });
   t.after(() => client.close());
 
@@ -18,9 +18,7 @@ test('Codex client initializes, reads the active account, and completes a turn',
   assert.equal(client.model, undefined);
   assert.equal(client.defaultModel, 'gpt-5.6-sol');
   assert.equal(await client.readCurrentModel(), 'gpt-5.6-terra');
-  assert.deepEqual(await client.readAccount(), {
-    type: 'chatgpt', email: 'fixture@example.com', planType: 'pro',
-  });
+  assert.equal(await client.isLoggedIn(), true);
   assert.equal(await client.startThread(), 'thread-fixture');
   assert.equal(await client.resumeThread('thread-existing'), 'thread-existing');
 
@@ -56,4 +54,21 @@ test('Codex discovery selects the newest installed version directory', async (t)
   await chmod(newPath, 0o755);
 
   assert.equal(discoverCodexExecutable({ LOCALAPPDATA: root, PATH: '' }, { bundledPath: join(root, 'missing-bundled.exe') }), newPath);
+});
+
+test('Codex discovery prefers the target computer PATH over a packaged executable', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cz-codex-path-first-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pathDirectory = join(root, 'path-bin');
+  await mkdir(pathDirectory, { recursive: true });
+  const pathCodex = join(pathDirectory, 'codex.exe');
+  const packagedCodex = join(root, 'packaged', 'codex.exe');
+  await mkdir(join(root, 'packaged'), { recursive: true });
+  await writeFile(pathCodex, 'path');
+  await writeFile(packagedCodex, 'packaged');
+
+  assert.equal(
+    discoverCodexExecutable({ LOCALAPPDATA: root, PATH: pathDirectory }, { bundledPath: packagedCodex }),
+    pathCodex,
+  );
 });
