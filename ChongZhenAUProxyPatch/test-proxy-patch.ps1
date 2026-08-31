@@ -1,22 +1,19 @@
-param(
-    [Parameter(Mandatory = $true)][string]$ProxyPath,
-    [Parameter(Mandatory = $true)][string]$AsarPath
-)
+param([Parameter(Mandatory = $true)][string]$ProxyPath)
 
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$expectedHash = (& node (Join-Path $projectRoot 'scripts\asar-header-hash.mjs') $AsarPath).Trim()
-if ($LASTEXITCODE -ne 0 -or $expectedHash -notmatch '^[a-f0-9]{64}$') {
-    throw 'Unable to calculate the patched ASAR header hash.'
-}
 if (-not (Test-Path -LiteralPath $ProxyPath)) { throw "Proxy DLL is missing: $ProxyPath" }
 
-$binaryText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($ProxyPath))
-if (-not $binaryText.Contains($expectedHash)) {
-    throw 'Proxy DLL does not contain the generated ASAR header hash.'
+$binaryBytes = [IO.File]::ReadAllBytes($ProxyPath)
+$binaryText = [Text.Encoding]::ASCII.GetString($binaryBytes)
+$binaryWideText = [Text.Encoding]::Unicode.GetString($binaryBytes)
+if ($binaryText -match '(?i)[a-f0-9]{64}') { throw 'Proxy DLL contains a compile-time ASAR hash.' }
+if ($binaryText -match '(?i)[A-Z]:\\Users\\') { throw 'Proxy DLL contains a build-machine user path.' }
+if (-not $binaryText.Contains('CZSCAR1') -or -not $binaryWideText.Contains('loader-metadata.bin')) {
+    throw 'Proxy DLL is missing dynamic sidecar metadata support.'
 }
-if ($binaryText.Contains('ee85b1ae1fecc337e575015993e76e603f8ae291043ca9e9e3ab3a73c4a06ef4')) {
-    throw 'Proxy DLL still contains the previous development ASAR header hash.'
-}
+$loaderTest = Join-Path (Split-Path -Parent $ProxyPath) 'loader_test.exe'
+if (-not (Test-Path -LiteralPath $loaderTest)) { throw 'Native loader test executable is missing.' }
+& $loaderTest
+if ($LASTEXITCODE -ne 0) { throw "Native loader test failed with exit code $LASTEXITCODE." }
 
-Write-Output 'PASS: proxy contains only the generated release ASAR integrity hash.'
+Write-Output 'PASS: proxy uses validated dynamic sidecar metadata and contains no fixed ASAR hash or build path.'
