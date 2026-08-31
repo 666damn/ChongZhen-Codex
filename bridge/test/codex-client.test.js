@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -37,6 +38,23 @@ test('Codex client reports a missing stored thread so the bridge can rebuild it'
   await client.start();
 
   await assert.rejects(client.resumeThread('missing'), /thread not found/);
+});
+
+test('closing the client terminates and releases the app-server child', async () => {
+  const client = new CodexClient({ executable: process.execPath, args: [fixture] });
+  await client.start();
+  const child = client.child;
+  client.close();
+  let timeout;
+  try {
+    await Promise.race([
+      once(child, 'exit'),
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('app-server child did not exit')), 3000); }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+  assert.notEqual(child.exitCode ?? child.signalCode, null);
 });
 
 test('Codex discovery selects the newest installed version directory', async (t) => {

@@ -132,7 +132,13 @@ export class CodexClient {
   }
 
   close() {
+    const child = this.child;
     this.rpc?.close();
+    child?.stdin?.destroy();
+    child?.stdout?.destroy();
+    child?.stderr?.destroy();
+    if (child && !child.killed) child.kill();
+    child?.unref();
     this.rpc = null;
     this.child = null;
   }

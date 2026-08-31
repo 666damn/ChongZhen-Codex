@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.13.1
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install JavaScript development dependencies
+        shell: pwsh
+        run: npm ci --prefix bridge
+      - name: Run bridge and patch-source tests
+        shell: pwsh
+        run: >-
+          node --test --test-concurrency=1 bridge/test/*.test.js
+          tests/game-byok-config.test.mjs
+          tests/game-byok-privacy.test.mjs
+          tests/region-patch.test.mjs
+          tests/renderer-patch.test.mjs
+      - name: Run installer tests
+        shell: pwsh
+        run: dotnet test installer/ChongZhenCodexInstaller.sln -c Release
+      - name: Enforce public-tree privacy gate
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/public-tree.test.ps1

@@ -21,12 +21,6 @@ function sha256(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-export function accountFingerprint(account, salt) {
-  const type = String(account?.type ?? 'anonymous').trim().toLowerCase();
-  const email = String(account?.email ?? '').trim().toLowerCase();
-  return sha256(`${salt}\0${type}\0${email}`);
-}
-
 export function normalizeMessages(messages = []) {
   return messages.map((message) => {
     const normalized = {};

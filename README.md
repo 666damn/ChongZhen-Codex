@@ -1,20 +1,31 @@
-# 历史模拟器：崇祯codex版
+# 历史模拟器：崇祯 Codex 版
 
-为 Steam 游戏《历史模拟器：崇祯》提供本机 Codex 桥接、随游戏自动启动、持久化游戏上下文，以及可选的非中国 IP 国际服分流。
+这是 Windows 安装器的公开源码仓库。安装器让《历史模拟器：崇祯》调用目标电脑上已经安装并登录的 Codex CLI，并提供可选的全球分流模式。
 
-项目目标是交付一个 Windows x64 单文件安装器。目标电脑需要预先安装、运行并登录 Codex CLI；桥接使用目标电脑当前登录账号和当前生效模型，不使用 OpenAI Platform API Key。
+## 使用方式
 
-## 安装模式
+目标电脑需要 Windows x64、已安装并至少运行登录过一次 Codex CLI，以及 Steam 版游戏。双击本地构建的单文件安装器后：
 
-- **仅 Codex 桥接**：配置游戏通过 `127.0.0.1` 调用本机 Codex，不替换游戏 ASAR 或 DLL。
-- **Codex 桥接 + 全球分流**：额外安装经过版本和哈希验证的当前补丁；空地区与 `CN` 保持国内服，其他非空国家代码走国际服。游戏 EXE 不修改。
+- “仅 Codex 桥接”不会替换游戏 EXE、ASAR 或 DLL。
+- “Codex 桥接 + 全球分流”只替换经过严格版本校验的 `resources/app.asar`，并安装带原 DLL 转发的 `version.dll`；游戏 EXE 始终不修改。
+- 默认/空地区和 `CN` 保持游戏原国内线路；其他非空地区代码走国际线路。
+- 安装后监视器随 Windows 登录启动。检测到游戏运行时启动桥接，游戏退出 60 秒后停止桥接。
+- 桥接跟随目标电脑当前 Codex 登录账号与当前配置模型，不写死账号或模型。
+
+安装器会优先读取 Steam 注册表、`libraryfolders.vdf` 和 App ID `4304230` 清单，找不到时再扫描固定磁盘。运行数据集中保存在 `%LOCALAPPDATA%\ChongZhenCodexBridge`。
 
 ## 隐私边界
 
-公开仓库和发布构建不得包含现有 Codex/ChatGPT 登录凭据、Cookie、邮箱、账号对象、`.codex` 数据、历史 session/thread、聊天记录、运行数据库、日志、存档、第三方 API Key 或完整游戏资源。
+公开仓库和本地发布载荷不包含完整游戏资源、存档、运行日志、现有 `.codex` 数据、Codex/ChatGPT 历史、Cookie、OAuth/access/refresh token、API key、邮箱、账号 ID、套餐信息或旧 session/thread ID。
 
-桥接只通过本机 Codex app-server 临时判断登录状态和读取当前模型。为了继续游戏上下文，安装后只保存本安装新建的 thread ID 映射和消息哈希，不导入已有 Codex 聊天。
+桥接器仅通过官方 `codex app-server` 在内存中检查是否已登录并读取当前模型。为满足游戏上下文持久化，它只在本机新建并保存游戏产生的线程 ID 与消息哈希，不导入旧 Codex 对话；切换 Codex 账号仍使用同一份游戏会话映射。
 
-## 当前状态
+## 构建与验证
 
-实现进行中。设计与实施计划位于 `docs/superpowers/`。
+Node.js 24 用于桥接和 ASAR 工具，.NET 8 Windows Forms 用于安装器与监视器。完整游戏载荷和最终 EXE 始终在 Git 外本地生成，不上传公开仓库。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-release.ps1 -Output dist
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\release-payload.test.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\assert-release-clean.ps1 -Installer dist\ChongZhenCodexInstaller.exe
+```

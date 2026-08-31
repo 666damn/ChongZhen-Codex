@@ -2,29 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  accountFingerprint,
   compareHistory,
   deriveConversationKey,
   hashMessages,
   normalizeMessages,
 } from '../src/hash.js';
-
-test('account fingerprint is stable for the same normalized account and salt', () => {
-  const salt = '00112233445566778899aabbccddeeff';
-  const first = accountFingerprint({ type: 'chatgpt', email: ' User@Example.COM ', planType: 'pro' }, salt);
-  const second = accountFingerprint({ type: 'chatgpt', email: 'user@example.com', planType: 'plus' }, salt);
-
-  assert.equal(first, second);
-  assert.match(first, /^[a-f0-9]{64}$/);
-});
-
-test('account fingerprint separates different Codex accounts', () => {
-  const salt = '00112233445566778899aabbccddeeff';
-  const first = accountFingerprint({ type: 'chatgpt', email: 'one@example.com' }, salt);
-  const second = accountFingerprint({ type: 'chatgpt', email: 'two@example.com' }, salt);
-
-  assert.notEqual(first, second);
-});
 
 test('message normalization preserves tool-call meaning while removing undefined fields', () => {
   const normalized = normalizeMessages([
