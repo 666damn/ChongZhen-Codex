@@ -1,23 +1,26 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const STRATEGY_KEY = 'local_codex';
+const ROLE_NAMES = [
+  'chat_model',
+  'court_model',
+  'second_model',
+  'simulate_model_1',
+  'simulate_model_2',
+];
 
-export function mergeLocalCodexStrategy(currentConfig, token) {
-  if (!currentConfig?.providers || !currentConfig?.custom_llms) {
+function assertByokConfig(config) {
+  if (!config?.providers || !config?.custom_llms) {
     throw new Error('The selected localStorage value is not a BYOK configuration');
   }
+}
+
+export function mergeLocalCodexStrategy(currentConfig, token) {
+  assertByokConfig(currentConfig);
   if (typeof token !== 'string' || !token) throw new Error('A local bridge token is required');
-
-  const roles = Object.fromEntries([
-    'chat_model',
-    'court_model',
-    'second_model',
-    'simulate_model_1',
-    'simulate_model_2',
-  ].map((role) => [role, { provider: STRATEGY_KEY, model: 'codex-current' }]));
-
+  const roles = Object.fromEntries(
+    ROLE_NAMES.map((role) => [role, { provider: STRATEGY_KEY, model: role }]),
+  );
   return {
     ...currentConfig,
     providers: {
@@ -41,6 +44,15 @@ export function mergeLocalCodexStrategy(currentConfig, token) {
   };
 }
 
+export function removeLocalCodexStrategy(currentConfig) {
+  assertByokConfig(currentConfig);
+  const providers = { ...currentConfig.providers };
+  const customLlms = { ...currentConfig.custom_llms };
+  delete providers[STRATEGY_KEY];
+  delete customLlms[STRATEGY_KEY];
+  return { ...currentConfig, providers, custom_llms: customLlms };
+}
+
 export function findGameStorageTargets(entries) {
   const parsedConfigs = [];
   for (const [key, value] of Object.entries(entries)) {
@@ -60,6 +72,33 @@ export function findGameStorageTargets(entries) {
   const config = parsedConfigs.find(({ key }) => key !== 'llm_config') ?? parsedConfigs[0];
   const activeStrategyKey = activeKeys.find((key) => key !== 'byok_active_strategy_key') ?? activeKeys[0];
   return { configKey: config.key, activeStrategyKey };
+}
+
+export function transformGameStorage(entries, { action, token } = {}) {
+  if (action !== 'install' && action !== 'remove') throw new Error('Action must be install or remove');
+  const { configKey, activeStrategyKey } = findGameStorageTargets(entries);
+  const currentConfig = JSON.parse(entries[configKey]);
+  const currentActive = JSON.parse(entries[activeStrategyKey] ?? 'null');
+
+  if (action === 'install') {
+    return {
+      configKey,
+      activeStrategyKey,
+      configValue: JSON.stringify(mergeLocalCodexStrategy(currentConfig, token)),
+      activeStrategyValue: JSON.stringify(STRATEGY_KEY),
+    };
+  }
+
+  const config = removeLocalCodexStrategy(currentConfig);
+  const active = currentActive === STRATEGY_KEY
+    ? (Object.keys(config.custom_llms)[0] ?? null)
+    : currentActive;
+  return {
+    configKey,
+    activeStrategyKey,
+    configValue: JSON.stringify(config),
+    activeStrategyValue: JSON.stringify(active),
+  };
 }
 
 class CdpClient {
@@ -121,7 +160,7 @@ function parseArguments(argv) {
   return options;
 }
 
-async function configure({ port, token, backup }) {
+export async function configure({ port, token, action }) {
   const targets = await fetch(`http://127.0.0.1:${port}/json/list`).then((response) => {
     if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`);
     return response.json();
@@ -134,24 +173,11 @@ async function configure({ port, token, backup }) {
   try {
     await client.request('Runtime.enable');
     const entries = await evaluate(client, 'Object.fromEntries(Object.keys(localStorage).map((key) => [key, localStorage.getItem(key)]))');
-    const { configKey, activeStrategyKey } = findGameStorageTargets(entries);
-    const currentConfig = JSON.parse(entries[configKey]);
-    const merged = mergeLocalCodexStrategy(currentConfig, token);
-
-    const backupRecord = {
-      createdAt: new Date().toISOString(),
-      target: { title: target.title, url: target.url },
-      configKey,
-      activeStrategyKey,
-      configValue: entries[configKey],
-      activeStrategyValue: entries[activeStrategyKey],
-    };
-    mkdirSync(dirname(backup), { recursive: true });
-    writeFileSync(backup, `${JSON.stringify(backupRecord, null, 2)}\n`, 'utf8');
-
+    const transformed = transformGameStorage(entries, { action, token });
+    const { configKey, activeStrategyKey, configValue, activeStrategyValue } = transformed;
     const writeExpression = `(() => {
-      localStorage.setItem(${JSON.stringify(configKey)}, ${JSON.stringify(JSON.stringify(merged))});
-      localStorage.setItem(${JSON.stringify(activeStrategyKey)}, ${JSON.stringify(JSON.stringify(STRATEGY_KEY))});
+      localStorage.setItem(${JSON.stringify(configKey)}, ${JSON.stringify(configValue)});
+      localStorage.setItem(${JSON.stringify(activeStrategyKey)}, ${JSON.stringify(activeStrategyValue)});
       return {
         config: localStorage.getItem(${JSON.stringify(configKey)}),
         active: localStorage.getItem(${JSON.stringify(activeStrategyKey)})
@@ -159,20 +185,19 @@ async function configure({ port, token, backup }) {
     })()`;
     const written = await evaluate(client, writeExpression);
     const verifiedConfig = JSON.parse(written.config);
-    if (JSON.parse(written.active) !== STRATEGY_KEY) throw new Error('Active strategy verification failed');
-    if (verifiedConfig.custom_llms?.[STRATEGY_KEY]?.name !== '本机 Codex（跟随当前模型）') {
-      throw new Error('Local Codex strategy verification failed');
-    }
+    const verifiedActive = JSON.parse(written.active);
+    const expectedActive = JSON.parse(activeStrategyValue);
+    const installed = Boolean(verifiedConfig.custom_llms?.[STRATEGY_KEY]);
+    if (verifiedActive !== expectedActive) throw new Error('Active strategy verification failed');
+    if ((action === 'install') !== installed) throw new Error('Local Codex strategy verification failed');
     return {
       result: 'pass',
       targetTitle: target.title,
       configKey,
       activeStrategyKey,
-      activeStrategy: STRATEGY_KEY,
-      strategyName: verifiedConfig.custom_llms[STRATEGY_KEY].name,
-      preservedStrategyCount: Object.keys(currentConfig.custom_llms).length,
-      finalStrategyCount: Object.keys(verifiedConfig.custom_llms).length,
-      backup,
+      action,
+      activeStrategy: verifiedActive,
+      localCodexInstalled: installed,
     };
   } finally {
     client.close();
@@ -181,13 +206,13 @@ async function configure({ port, token, backup }) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const options = parseArguments(process.argv.slice(2));
-  if (!options.port || !options.token || !options.backup) {
-    throw new Error('Usage: node configure-game-byok.mjs --port <port> --token <token> --backup <path>');
+  if (!options.port || !['install', 'remove'].includes(options.action) || (options.action === 'install' && !options.token)) {
+    throw new Error('Usage: node configure-game-byok.mjs --port <port> --action install|remove [--token <token>]');
   }
   const result = await configure({
     port: Number(options.port),
     token: options.token,
-    backup: options.backup,
+    action: options.action,
   });
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }

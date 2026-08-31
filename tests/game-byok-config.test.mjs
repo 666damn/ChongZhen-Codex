@@ -4,6 +4,8 @@ import test from 'node:test';
 import {
   findGameStorageTargets,
   mergeLocalCodexStrategy,
+  removeLocalCodexStrategy,
+  transformGameStorage,
 } from '../scripts/configure-game-byok.mjs';
 
 test('finds user-scoped game config and active strategy keys by their values', () => {
@@ -45,7 +47,27 @@ test('adds and selects local Codex without overwriting existing BYOK settings', 
   assert.deepEqual(Object.keys(merged.custom_llms.local_codex.roles).sort(), [
     'chat_model', 'court_model', 'second_model', 'simulate_model_1', 'simulate_model_2',
   ]);
-  for (const role of Object.values(merged.custom_llms.local_codex.roles)) {
-    assert.deepEqual(role, { provider: 'local_codex', model: 'codex-current' });
+  for (const [roleName, role] of Object.entries(merged.custom_llms.local_codex.roles)) {
+    assert.deepEqual(role, { provider: 'local_codex', model: roleName });
   }
+});
+
+test('removes only local Codex and selects a safe existing fallback', () => {
+  const current = mergeLocalCodexStrategy({
+    providers: { qwen: { api_key: 'preserved' } },
+    custom_llms: { qwen_choice: { name: 'Qwen' } },
+  }, 'local-token');
+
+  const removed = removeLocalCodexStrategy(current);
+  assert.deepEqual(removed, {
+    providers: { qwen: { api_key: 'preserved' } },
+    custom_llms: { qwen_choice: { name: 'Qwen' } },
+  });
+
+  const transformed = transformGameStorage({
+    llm_settings_user: JSON.stringify(current),
+    byok_active_strategy_key_user: JSON.stringify('local_codex'),
+  }, { action: 'remove' });
+  assert.equal(JSON.parse(transformed.activeStrategyValue), 'qwen_choice');
+  assert.deepEqual(JSON.parse(transformed.configValue), removed);
 });
