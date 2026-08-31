@@ -4,14 +4,14 @@
 
 - 文件：`ChongZhenCodexInstaller.exe`
 - 平台：Windows x64，自包含 .NET 8 单文件
-- SHA-256：`CC93984E934A3901CAC009F6572AA483F9E7ABB66E80C51A905DA0FDBF5C8BE2`
+- SHA-256：`66819A4CCDCEAB779AA7DD9B2EE9E6FDB031B17AE13FEA2D5ABE9A1ADE20B764`
 - 发布目录仅包含一个 EXE；EXE 与完整游戏载荷不进入公开 Git。
 
 ## 自动验证结果
 
-- Bridge Node 测试：29/29 通过。
+- Bridge Node 测试：30/30 通过。
 - ASAR、地区、renderer 与 BYOK 源测试：12/12 通过。
-- .NET 安装器测试：40/40 通过。
+- .NET 安装器测试：41/41 通过。
 - 发布载荷：20/20 白名单条目通过长度和 SHA-256 校验。
 - 最终 EXE：嵌入载荷自解包校验、WinForms UI 启动和构建机用户路径扫描通过。
 - 当前 Steam 游戏 EXE 保持受支持的原始 SHA-256：`68F05EDBF6E1E48F1CDCDA30E53BD6E37419A3584B684632DBFE223B1B39D785`。

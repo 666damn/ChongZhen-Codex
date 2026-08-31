@@ -24,6 +24,7 @@ export class CodexClient {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    this.child.stderr.resume();
     this.rpc = new JsonlRpcClient(this.child);
     this.rpc.on('serverRequest', (request) => {
       this.rpc.respond(request.id, { decision: 'decline' });

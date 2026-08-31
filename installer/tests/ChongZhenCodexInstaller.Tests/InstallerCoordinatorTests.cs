@@ -37,6 +37,22 @@ public sealed class InstallerCoordinatorTests
     }
 
     [Fact]
+    public async Task ReinstallingGlobalRestoresOriginalGameBeforeApplyingFreshPayload()
+    {
+        var backend = new FakeBackend();
+        var store = new MemoryCoordinatorStateStore
+        {
+            State = new CoordinatorState(@"D:\Game", InstallMode.BridgeAndGlobal, "old", DateTimeOffset.UnixEpoch),
+        };
+        var coordinator = new InstallerCoordinator(backend, store);
+
+        var result = await coordinator.InstallAsync(InstallMode.BridgeAndGlobal, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(["Discover", "RestoreGlobal", "InstallBridge", "InstallGlobal", "ConfigureByokInstall"], backend.Calls);
+    }
+
+    [Fact]
     public async Task UnsupportedGlobalVersionLeavesCoordinatorStateUntouched()
     {
         var backend = new FakeBackend { RejectGlobal = true };

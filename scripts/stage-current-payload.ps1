@@ -62,8 +62,7 @@ $metadata = [ordered]@{
     supportedGameExeSha256 = @('68F05EDBF6E1E48F1CDCDA30E53BD6E37419A3584B684632DBFE223B1B39D785')
     supportedAsarHeaderSha256 = @(
         'dbaaf692e2391d3b13c635f4e63d4159a8b52bce41ed2beb5cc78749949742c1',
-        '083b4f00ede7f8bab0f1558c3ab2fec05221a63e915ea9414e51aeb63a863abe',
-        $patchedHeader
+        '083b4f00ede7f8bab0f1558c3ab2fec05221a63e915ea9414e51aeb63a863abe'
     )
     supportedExistingVersionSha256 = @(
         (Get-FileHash -LiteralPath $proxy -Algorithm SHA256).Hash,
@@ -72,4 +71,3 @@ $metadata = [ordered]@{
 }
 $metadata | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $resolvedOutput 'payload-metadata.json') -Encoding UTF8
 Write-Output $resolvedOutput
-

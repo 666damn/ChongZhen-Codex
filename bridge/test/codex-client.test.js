@@ -57,6 +57,17 @@ test('closing the client terminates and releases the app-server child', async ()
   assert.notEqual(child.exitCode ?? child.signalCode, null);
 });
 
+test('Codex stderr is drained without logging or blocking RPC', async (t) => {
+  const client = new CodexClient({
+    executable: process.execPath,
+    args: [fixture],
+    env: { ...process.env, FIXTURE_STDERR_FLOOD: '1' },
+  });
+  t.after(() => client.close());
+  await client.start();
+  assert.equal(await client.isLoggedIn(), true);
+});
+
 test('Codex discovery selects the newest installed version directory', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'cz-codex-discovery-'));
   t.after(() => rm(root, { recursive: true, force: true }));

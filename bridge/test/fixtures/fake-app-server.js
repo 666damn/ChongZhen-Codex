@@ -1,5 +1,7 @@
 import { createInterface } from 'node:readline';
 
+if (process.env.FIXTURE_STDERR_FLOOD === '1') process.stderr.write('x'.repeat(1024 * 1024));
+
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
 function send(message, delay = 0) {
