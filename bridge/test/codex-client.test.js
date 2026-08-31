@@ -102,6 +102,17 @@ test('Codex discovery prefers the target computer PATH over a packaged executabl
   );
 });
 
+test('Codex discovery accepts the npm codex.cmd launcher on PATH', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cz-codex-cmd-discovery-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const pathDirectory = join(root, 'npm-bin');
+  await mkdir(pathDirectory, { recursive: true });
+  const pathCodex = join(pathDirectory, 'codex.cmd');
+  await writeFile(pathCodex, '@echo off\r\n');
+
+  assert.equal(discoverCodexExecutable({ LOCALAPPDATA: root, PATH: pathDirectory }), pathCodex);
+});
+
 test('Windows npm codex.cmd launchers can run app-server RPC', { skip: process.platform !== 'win32' }, async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'cz-codex-cmd-'));
   t.after(() => rm(root, { recursive: true, force: true }));

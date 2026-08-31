@@ -4,8 +4,10 @@ import { delimiter, join } from 'node:path';
 export function discoverCodexExecutable(env = process.env) {
   if (env.CHONGZHEN_CODEX_PATH && existsSync(env.CHONGZHEN_CODEX_PATH)) return env.CHONGZHEN_CODEX_PATH;
   for (const directory of String(env.PATH ?? '').split(delimiter).filter(Boolean)) {
-    const candidate = join(directory, 'codex.exe');
-    if (existsSync(candidate)) return candidate;
+    for (const filename of ['codex.exe', 'codex.cmd']) {
+      const candidate = join(directory, filename);
+      if (existsSync(candidate)) return candidate;
+    }
   }
 
   const binRoot = join(env.LOCALAPPDATA ?? '', 'OpenAI', 'Codex', 'bin');

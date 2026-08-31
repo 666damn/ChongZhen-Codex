@@ -4,12 +4,12 @@
 
 - 文件：`ChongZhenCodexInstaller.exe`
 - 平台：Windows x64，自包含 .NET 8 单文件
-- SHA-256：`F5050DE5C82DF5621D9BE86E08C3EDD74074CC04116B71A02F746B65F9CF7C23`
+- SHA-256：`0A3618B6B1E12371AE7296B34CDFDD07357975518EEF91CD075D17ADF74A3A25`
 - 发布目录仅包含一个 EXE；EXE 与完整游戏载荷不进入公开 Git。
 
 ## 自动验证结果
 
-- Bridge Node 测试：31/31 通过。
+- Bridge Node 测试：32/32 通过。
 - ASAR、地区、renderer 与 BYOK 源测试：12/12 通过。
 - .NET 安装器测试：41/41 通过。
 - 发布载荷：20/20 白名单条目通过长度和 SHA-256 校验。
