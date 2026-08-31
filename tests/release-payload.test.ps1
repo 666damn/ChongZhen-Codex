@@ -73,6 +73,9 @@ try {
         @($manifest.supportedExistingVersionSha256).Count -lt 1) {
         throw 'Supported-version allowlists are incomplete.'
     }
+    if (@($manifest.supportedExistingVersionSha256) -notcontains 'E2415FD1F0F4C6A58544D92376FEFF3CBC9004EE1A9E26B36D3209925C605082') {
+        throw 'The validated original game version.dll hash is missing.'
+    }
     Write-Output "PASS: audited $($actual.Count) allowlisted payload files; no local Codex/ChatGPT data is packaged."
 }
 finally {

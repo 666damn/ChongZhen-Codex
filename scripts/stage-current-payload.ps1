@@ -65,6 +65,7 @@ $metadata = [ordered]@{
         '083b4f00ede7f8bab0f1558c3ab2fec05221a63e915ea9414e51aeb63a863abe'
     )
     supportedExistingVersionSha256 = @(
+        'E2415FD1F0F4C6A58544D92376FEFF3CBC9004EE1A9E26B36D3209925C605082',
         (Get-FileHash -LiteralPath $proxy -Algorithm SHA256).Hash,
         'F659DC5CBD92C26FABBEFB2D76CA1921DEA1E91B8F4CC77A3F9B60E64392DD71'
     )
