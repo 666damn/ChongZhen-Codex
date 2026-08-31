@@ -21,12 +21,17 @@ try {
     ) | ForEach-Object { "bridge/src/$_" }
     $expected = @(
         'manifest.json', 'bridge/node.exe', 'bridge/package.json',
-        'bridge/tools/configure-game-byok.mjs', 'bridge/bridge-id.txt',
-        'global/app.asar', 'global/version.dll'
+        'bridge/tools/configure-game-byok.mjs', 'global/version.dll'
     ) + $expectedBridgeSources
     $actual = @($archive.Entries | Where-Object { $_.Name } | ForEach-Object { $_.FullName.Replace('\', '/') })
     $difference = @(Compare-Object ($expected | Sort-Object) ($actual | Sort-Object))
     if ($difference.Count) { throw "Payload allowlist mismatch: $($difference | Out-String)" }
+    if ($actual | Where-Object { $_ -match '(?i)(^|/)[^/]*\.asar$' }) {
+        throw 'Payload must not contain a game ASAR.'
+    }
+    if ($actual -contains 'bridge/bridge-id.txt') {
+        throw 'Payload must not contain a build-time bridge identifier.'
+    }
 
     $manifestEntry = $archive.GetEntry('manifest.json')
     $reader = [IO.StreamReader]::new($manifestEntry.Open(), [Text.Encoding]::UTF8)
@@ -52,9 +57,6 @@ try {
 
     [IO.Directory]::CreateDirectory($temporary) | Out-Null
     [IO.Compression.ZipFile]::ExtractToDirectory($resolvedPayload, $temporary)
-    $bridgeId = [IO.File]::ReadAllText((Join-Path $temporary 'bridge\bridge-id.txt')).Trim()
-    if ($bridgeId -notmatch '^czb_[a-f0-9]{64}$') { throw 'Release bridge identifier is invalid.' }
-
     $textFiles = Get-ChildItem -LiteralPath (Join-Path $temporary 'bridge') -Recurse -File |
         Where-Object { $_.Extension -in '.js', '.mjs', '.json', '.txt' }
     foreach ($file in $textFiles) {
@@ -69,7 +71,7 @@ try {
     $nodeVersion = (& (Join-Path $temporary 'bridge\node.exe') --version).Trim()
     if ($LASTEXITCODE -ne 0 -or $nodeVersion -ne 'v24.13.1') { throw "Unexpected bundled Node version: $nodeVersion" }
     if (@($manifest.supportedGameExeSha256).Count -lt 1 -or
-        @($manifest.supportedAsarHeaderSha256).Count -lt 2 -or
+        @($manifest.supportedAsarHeaderSha256).Count -lt 1 -or
         @($manifest.supportedExistingVersionSha256).Count -lt 1) {
         throw 'Supported-version allowlists are incomplete.'
     }
