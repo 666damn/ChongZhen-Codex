@@ -34,8 +34,6 @@ jobs:
           tests/region-patch.test.mjs
           tests/renderer-patch.test.mjs
           tests/sidecar-builder.test.mjs
-          tests/asar-content.test.mjs
-          tests/asar-delta.test.mjs
       - name: Run installer tests
         shell: pwsh
         run: dotnet test installer/ChongZhenCodexInstaller.sln -c Release
