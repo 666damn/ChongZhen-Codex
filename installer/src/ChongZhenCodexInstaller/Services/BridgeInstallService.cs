@@ -12,6 +12,8 @@ public sealed record BridgeRuntimePaths(
     string ConfigPath,
     string InstalledExecutablePath)
 {
+    public string PatcherScriptPath => Path.Combine(RuntimeRoot, "app", "patcher", "src", "build-sidecar.mjs");
+
     public static BridgeRuntimePaths FromRoot(string runtimeRoot)
     {
         var root = Path.GetFullPath(runtimeRoot);
@@ -26,9 +28,13 @@ public sealed record BridgeRuntimePaths(
     }
 }
 
-public sealed class BridgeInstallService(string runtimeRoot, StartupService startupService)
+public sealed class BridgeInstallService(
+    string runtimeRoot,
+    StartupService startupService,
+    BridgeSecretStore? bridgeSecretStore = null)
 {
     private readonly string runtimeRoot = Path.GetFullPath(runtimeRoot);
+    private readonly BridgeSecretStore bridgeSecretStore = bridgeSecretStore ?? new BridgeSecretStore(runtimeRoot);
 
     public async Task<BridgeRuntimePaths> InstallRuntimeAsync(
         VerifiedPayload payload,
@@ -40,13 +46,10 @@ public sealed class BridgeInstallService(string runtimeRoot, StartupService star
             .ToArray();
         if (bridgeFiles.Length == 0 || !bridgeFiles.Contains("bridge/node.exe") ||
             !bridgeFiles.Contains("bridge/src/main.js") ||
-            !bridgeFiles.Contains("bridge/tools/configure-game-byok.mjs") ||
-            !bridgeFiles.Contains("bridge/bridge-id.txt"))
+            !bridgeFiles.Contains("bridge/tools/configure-game-byok.mjs"))
             throw new InvalidDataException("Bridge runtime payload is incomplete.");
 
-        var bridgeId = (await File.ReadAllTextAsync(payload.GetPath("bridge/bridge-id.txt"), cancellationToken)).Trim();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(bridgeId, "^czb_[a-f0-9]{64}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-            throw new InvalidDataException("Bridge release identifier is invalid.");
+        var bridgeId = await bridgeSecretStore.GetOrCreateAsync(cancellationToken);
 
         Directory.CreateDirectory(runtimeRoot);
         var appRoot = Path.Combine(runtimeRoot, "app");

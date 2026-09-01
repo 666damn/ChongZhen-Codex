@@ -15,6 +15,7 @@ public static class CommandLine
             ["--install-global"] = AppCommand.InstallGlobal,
             ["--uninstall"] = AppCommand.Uninstall,
             ["--audit-payload"] = AppCommand.AuditPayload,
+            ["--refresh-sidecar"] = AppCommand.RefreshSidecar,
         };
 
     public static CommandLineOptions Parse(IReadOnlyList<string> arguments)

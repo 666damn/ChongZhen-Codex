@@ -19,7 +19,6 @@ public sealed class BridgeInstallServiceTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(payloadRoot, "bridge", "node.exe"), [1]);
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "src", "main.js"), "// clean fixture");
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "tools", "configure-game-byok.mjs"), "// clean fixture");
-        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "bridge-id.txt"), $"czb_{new string('a', 64)}\n");
         await File.WriteAllBytesAsync(installerSource, [9]);
         var manifest = new PayloadManifest(
             "test",
@@ -38,7 +37,9 @@ public sealed class BridgeInstallServiceTests : IDisposable
         Assert.Equal([9], await File.ReadAllBytesAsync(result.InstalledExecutablePath));
         using var config = JsonDocument.Parse(await File.ReadAllTextAsync(result.ConfigPath));
         Assert.Equal(43129, config.RootElement.GetProperty("port").GetInt32());
-        Assert.Equal($"czb_{new string('a', 64)}", config.RootElement.GetProperty("token").GetString());
+        var token = config.RootElement.GetProperty("token").GetString();
+        Assert.Matches("^czb_[a-f0-9]{64}$", token!);
+        Assert.Equal(token, (await File.ReadAllTextAsync(Path.Combine(runtimeRoot, "bridge-token.txt"))).Trim());
         var serialized = config.RootElement.GetRawText();
         Assert.DoesNotContain("account", serialized, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("session", serialized, StringComparison.OrdinalIgnoreCase);
@@ -69,7 +70,6 @@ public sealed class BridgeInstallServiceTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "node.exe"), "new-runtime");
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "src", "main.js"), "// fixture");
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "tools", "configure-game-byok.mjs"), "// fixture");
-        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "bridge-id.txt"), $"czb_{new string('b', 64)}");
         var manifest = new PayloadManifest(
             "test",
             Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories).ToDictionary(
@@ -91,7 +91,6 @@ public sealed class BridgeInstallServiceTests : IDisposable
         Directory.CreateDirectory(Path.Combine(payloadRoot, "bridge", "src"));
         await File.WriteAllBytesAsync(Path.Combine(payloadRoot, "bridge", "node.exe"), [1]);
         await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "src", "main.js"), "// fixture");
-        await File.WriteAllTextAsync(Path.Combine(payloadRoot, "bridge", "bridge-id.txt"), $"czb_{new string('d', 64)}");
         var manifest = new PayloadManifest(
             "test",
             Directory.EnumerateFiles(payloadRoot, "*", SearchOption.AllDirectories).ToDictionary(

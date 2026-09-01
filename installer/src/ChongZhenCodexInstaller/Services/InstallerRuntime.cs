@@ -31,4 +31,34 @@ public static class InstallerRuntime
         var processes = new ProcessService(paths);
         return (new WatcherService(processes, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(2)), processes);
     }
+
+    public static async Task RefreshSidecarAsync(CancellationToken cancellationToken)
+    {
+        var coordinatorState = new CoordinatorStateStore(RuntimeRoot).Load();
+        var loaderState = new InstallStateStore(RuntimeRoot).LoadLoader();
+        if (coordinatorState?.Mode != Domain.InstallMode.BridgeAndGlobal || loaderState is null) return;
+
+        var game = GameInstall.FromRoot(coordinatorState.GamePath);
+        var gameProcesses = System.Diagnostics.Process.GetProcessesByName("ChongZhenSimulator");
+        bool gameRunning;
+        try { gameRunning = gameProcesses.Any(process => !process.HasExited); }
+        finally { foreach (var process in gameProcesses) process.Dispose(); }
+        if (gameRunning) return;
+
+        var staging = Path.Combine(Path.GetTempPath(), $"ChongZhenCodexRefresh-{Guid.NewGuid():N}");
+        try
+        {
+            using var stream = new EmbeddedPayloadProvider().OpenRead();
+            var payload = new PayloadService().ExtractAndVerify(stream, staging);
+            var paths = BridgeRuntimePaths.FromRoot(RuntimeRoot);
+            var sidecar = new SidecarService(RuntimeRoot, new NodeSidecarPatcher(paths.NodePath, paths.PatcherScriptPath));
+            var token = await new BridgeSecretStore(RuntimeRoot).GetOrCreateAsync(cancellationToken);
+            await new SidecarRefreshService(RuntimeRoot, sidecar).RefreshAsync(
+                game, payload, token, gameRunning: false, cancellationToken);
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, true);
+        }
+    }
 }

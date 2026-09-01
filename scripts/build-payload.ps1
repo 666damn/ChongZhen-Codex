@@ -38,7 +38,7 @@ $archive = [IO.Compression.ZipFile]::Open($resolvedOutput, [IO.Compression.ZipAr
 try {
     foreach ($file in Get-ChildItem -LiteralPath $resolvedStaging -Recurse -File | Where-Object { $_.Name -ne 'payload-metadata.json' } | Sort-Object FullName) {
         $relative = $file.FullName.Substring($resolvedStaging.Length + 1).Replace('\', '/')
-        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $relative, [IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $relative, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
     }
 }
 finally { $archive.Dispose() }

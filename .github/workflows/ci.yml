@@ -13,13 +13,18 @@ jobs:
         with:
           node-version: 24.13.1
           cache: npm
-          cache-dependency-path: bridge/package-lock.json
+          cache-dependency-path: |
+            bridge/package-lock.json
+            patcher/package-lock.json
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
       - name: Install JavaScript development dependencies
         shell: pwsh
         run: npm ci --prefix bridge
+      - name: Install pinned sidecar patcher dependencies
+        shell: pwsh
+        run: npm ci --prefix patcher --omit=dev --ignore-scripts
       - name: Run bridge and patch-source tests
         shell: pwsh
         run: >-
@@ -28,6 +33,7 @@ jobs:
           tests/game-byok-privacy.test.mjs
           tests/region-patch.test.mjs
           tests/renderer-patch.test.mjs
+          tests/sidecar-builder.test.mjs
       - name: Run installer tests
         shell: pwsh
         run: dotnet test installer/ChongZhenCodexInstaller.sln -c Release

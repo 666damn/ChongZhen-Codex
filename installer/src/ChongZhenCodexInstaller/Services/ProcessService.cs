@@ -11,11 +11,13 @@ public interface IProcessService
     BridgeProcessHandle StartBridge();
     bool IsBridgeRunning(BridgeProcessHandle handle);
     Task StopBridgeAsync(BridgeProcessHandle handle, CancellationToken cancellationToken);
+    Task RefreshSidecarAsync(CancellationToken cancellationToken);
 }
 
 public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, IDisposable
 {
     private readonly ConcurrentDictionary<int, Process> children = new();
+    private readonly string readyStatusPath = Path.Combine(paths.RuntimeRoot, "bridge-ready.json");
 
     public bool IsGameRunning()
     {
@@ -26,6 +28,7 @@ public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, 
 
     public BridgeProcessHandle StartBridge()
     {
+        BridgeReadyStatus.Delete(readyStatusPath);
         var start = new ProcessStartInfo
         {
             FileName = paths.NodePath,
@@ -39,18 +42,17 @@ public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, 
         start.ArgumentList.Add("--disable-warning=ExperimentalWarning");
         start.ArgumentList.Add(paths.BridgeMainPath);
         start.Environment["CHONGZHEN_BRIDGE_HOME"] = paths.RuntimeRoot;
-        var process = new Process { StartInfo = start, EnableRaisingEvents = true };
+        var process = new Process { StartInfo = start };
         process.OutputDataReceived += (_, _) => { };
         process.ErrorDataReceived += (_, _) => { };
-        process.Exited += (_, _) =>
-        {
-            if (children.TryRemove(process.Id, out var removed)) removed.Dispose();
-        };
         if (!process.Start()) throw new InvalidOperationException("Unable to start the local bridge process.");
-        children[process.Id] = process;
+        var processId = process.Id;
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        return new(process.Id);
+        children[processId] = process;
+        process.Exited += (_, _) => HandleBridgeExit(processId);
+        process.EnableRaisingEvents = true;
+        return new(processId);
     }
 
     public bool IsBridgeRunning(BridgeProcessHandle handle)
@@ -74,7 +76,23 @@ public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, 
         finally
         {
             if (children.TryRemove(handle.ProcessId, out var removed)) removed.Dispose();
+            BridgeReadyStatus.DeleteIfOwned(readyStatusPath, handle.ProcessId);
         }
+    }
+
+    public async Task RefreshSidecarAsync(CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo
+        {
+            FileName = paths.InstalledExecutablePath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        start.ArgumentList.Add("--refresh-sidecar");
+        using var process = Process.Start(start) ?? throw new InvalidOperationException("Unable to start sidecar refresh process.");
+        await process.WaitForExitAsync(cancellationToken);
+        if (process.ExitCode != 0) throw new InvalidOperationException("Sidecar refresh process failed.");
     }
 
     public void Dispose()
@@ -86,5 +104,12 @@ public sealed class ProcessService(BridgeRuntimePaths paths) : IProcessService, 
             process.Dispose();
         }
         children.Clear();
+        BridgeReadyStatus.Delete(readyStatusPath);
+    }
+
+    private void HandleBridgeExit(int processId)
+    {
+        if (children.TryRemove(processId, out var removed)) removed.Dispose();
+        BridgeReadyStatus.DeleteIfOwned(readyStatusPath, processId);
     }
 }

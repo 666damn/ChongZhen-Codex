@@ -147,19 +147,7 @@ public sealed class InstallerBackend : IInstallerBackend, IDisposable
 
     private void StopInstalledWatchers()
     {
-        var installed = BridgeRuntimePaths.FromRoot(runtimeRoot).InstalledExecutablePath;
-        foreach (var process in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(installed)))
-        {
-            try
-            {
-                if (process.Id != Environment.ProcessId && string.Equals(process.MainModule?.FileName, installed, StringComparison.OrdinalIgnoreCase))
-                    process.Kill(true);
-            }
-            catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-            }
-            finally { process.Dispose(); }
-        }
+        new InstalledRuntimeProcessStopper().Stop(BridgeRuntimePaths.FromRoot(runtimeRoot));
     }
 
     private static void StartInstalledWatcher(string installedExecutable)

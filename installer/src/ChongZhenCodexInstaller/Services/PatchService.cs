@@ -26,17 +26,37 @@ public sealed record GameInstall(string RootPath, string ExecutablePath, string 
     }
 }
 
-public sealed record PatchResult(PatchInstallState State);
+public sealed record PatchResult(LoaderInstallState State);
 
 public sealed class PatchService
 {
+    private static readonly string[] LegacyManagedFiles = ["resources/app.asar", "version.dll", "version_original.dll"];
     private readonly InstallStateStore stateStore;
-    private readonly string systemVersionPath;
+    private readonly SidecarService sidecarService;
+    private readonly BridgeSecretStore secretStore;
+    private readonly LoaderInstallService loaderInstallService;
 
     public PatchService(InstallStateStore stateStore, string? systemVersionPath = null)
     {
         this.stateStore = stateStore;
-        this.systemVersionPath = systemVersionPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "version.dll");
+        var paths = BridgeRuntimePaths.FromRoot(stateStore.RootPath);
+        sidecarService = new SidecarService(
+            stateStore.RootPath,
+            new NodeSidecarPatcher(paths.NodePath, paths.PatcherScriptPath));
+        secretStore = new BridgeSecretStore(stateStore.RootPath);
+        loaderInstallService = new LoaderInstallService(stateStore, systemVersionPath);
+    }
+
+    public PatchService(
+        InstallStateStore stateStore,
+        SidecarService sidecarService,
+        BridgeSecretStore secretStore,
+        LoaderInstallService loaderInstallService)
+    {
+        this.stateStore = stateStore;
+        this.sidecarService = sidecarService;
+        this.secretStore = secretStore;
+        this.loaderInstallService = loaderInstallService;
     }
 
     public async Task<PatchResult> InstallGlobalAsync(
@@ -45,112 +65,101 @@ public sealed class PatchService
         FailurePoint failurePoint,
         CancellationToken cancellationToken)
     {
-        var executableHashBefore = Hashing.Sha256(game.ExecutablePath);
-        ValidateGame(game, payload.Manifest);
-        var payloadAsar = payload.GetPath("global/app.asar");
-        var payloadProxy = payload.GetPath("global/version.dll");
-        ValidatePayloadFile(payload.Manifest, "global/app.asar", payloadAsar);
-        ValidatePayloadFile(payload.Manifest, "global/version.dll", payloadProxy);
-        if (!File.Exists(systemVersionPath)) throw new FileNotFoundException("Target system Version API DLL is missing.", systemVersionPath);
+        var previous = stateStore.Load();
+        if (previous?.InstalledSha256.ContainsKey("resources/app.asar") == true)
+            await RestoreAsync(game, previous, cancellationToken);
 
-        var backupRoot = stateStore.CreateBackupDirectory();
-        var originals = new Dictionary<string, OriginalFileState>(StringComparer.OrdinalIgnoreCase);
-        await using var transaction = new FileTransaction();
-        originals["resources/app.asar"] = await transaction.BackupAsync(game.AsarPath, Path.Combine(backupRoot, "app.asar"), cancellationToken);
-        originals["version.dll"] = await transaction.BackupAsync(game.VersionPath, Path.Combine(backupRoot, "version.dll"), cancellationToken);
-        originals["version_original.dll"] = await transaction.BackupAsync(game.VersionOriginalPath, Path.Combine(backupRoot, "version_original.dll"), cancellationToken);
-        ThrowIfInjected(failurePoint, FailurePoint.AfterBackup);
-
-        await transaction.ReplaceAsync(payloadAsar, game.AsarPath, cancellationToken);
-        ThrowIfInjected(failurePoint, FailurePoint.AfterAsarReplace);
-        await transaction.ReplaceAsync(payloadProxy, game.VersionPath, cancellationToken);
-        ThrowIfInjected(failurePoint, FailurePoint.AfterDllReplace);
-        await transaction.ReplaceAsync(systemVersionPath, game.VersionOriginalPath, cancellationToken);
-
-        var installed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["resources/app.asar"] = Hashing.Sha256(game.AsarPath),
-            ["version.dll"] = Hashing.Sha256(game.VersionPath),
-            ["version_original.dll"] = Hashing.Sha256(game.VersionOriginalPath),
-        };
-        if (!string.Equals(executableHashBefore, Hashing.Sha256(game.ExecutablePath), StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Game executable changed during installation.");
-        var state = new PatchInstallState(game.RootPath, payload.Manifest.Version, originals, installed, DateTimeOffset.UtcNow);
-        stateStore.Save(state);
-        transaction.Commit();
+        var executableHash = Hashing.Sha256(game.ExecutablePath);
+        var asarHash = Hashing.Sha256(game.AsarPath);
+        var token = await secretStore.GetOrCreateAsync(cancellationToken);
+        await sidecarService.EnsureCurrentAsync(game, payload, token, cancellationToken);
+        var state = await loaderInstallService.InstallAsync(game, payload, failurePoint, cancellationToken);
+        EnsureOfficialUnchanged(game, executableHash, asarHash);
         return new(state);
     }
 
+    public Task RestoreAsync(GameInstall game, LoaderInstallState state, CancellationToken cancellationToken) =>
+        loaderInstallService.UninstallAsync(game, state, cancellationToken);
+
     public async Task RestoreAsync(GameInstall game, PatchInstallState state, CancellationToken cancellationToken)
     {
+        if (!state.InstalledSha256.ContainsKey("resources/app.asar"))
+        {
+            await loaderInstallService.UninstallAsync(game, new LoaderInstallState(
+                state.GamePath,
+                state.Version,
+                state.Originals,
+                state.InstalledSha256,
+                state.InstalledAt), cancellationToken);
+            return;
+        }
+        await RestoreLegacyAsync(game, state, cancellationToken);
+    }
+
+    private async Task RestoreLegacyAsync(GameInstall game, PatchInstallState state, CancellationToken cancellationToken)
+    {
+        if (!string.Equals(Path.GetFullPath(game.RootPath), Path.GetFullPath(state.GamePath), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Legacy state belongs to a different game directory.");
+        if (state.Originals.Keys.Any(key => !LegacyManagedFiles.Contains(key, StringComparer.OrdinalIgnoreCase)) ||
+            state.InstalledSha256.Keys.Any(key => !LegacyManagedFiles.Contains(key, StringComparer.OrdinalIgnoreCase)))
+            throw new InvalidDataException("Legacy state contains an unexpected file path.");
+
         foreach (var pair in state.InstalledSha256)
         {
-            var target = Path.Combine(game.RootPath, pair.Key.Replace('/', Path.DirectorySeparatorChar));
+            var target = ResolveLegacyPath(game, pair.Key);
             if (File.Exists(target) && !string.Equals(Hashing.Sha256(target), pair.Value, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException($"Refusing to overwrite an unknown current file: {pair.Key}");
+        }
+        foreach (var pair in state.Originals.Where(pair => pair.Value.Existed))
+        {
+            if (pair.Value.BackupPath is null || !File.Exists(pair.Value.BackupPath) ||
+                !string.Equals(Hashing.Sha256(pair.Value.BackupPath), pair.Value.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"Original backup is missing or damaged: {pair.Key}");
         }
 
         var recoveryRoot = stateStore.CreateBackupDirectory();
         await using var transaction = new FileTransaction();
-        foreach (var pair in state.Originals)
+        foreach (var relative in LegacyManagedFiles)
         {
-            var target = Path.Combine(game.RootPath, pair.Key.Replace('/', Path.DirectorySeparatorChar));
-            await transaction.BackupAsync(target, Path.Combine(recoveryRoot, pair.Key.Replace('/', Path.DirectorySeparatorChar)), cancellationToken);
+            var target = ResolveLegacyPath(game, relative);
+            await transaction.BackupAsync(target, Path.Combine(recoveryRoot, relative.Replace('/', Path.DirectorySeparatorChar)), cancellationToken);
         }
         foreach (var pair in state.Originals)
         {
-            var target = Path.Combine(game.RootPath, pair.Key.Replace('/', Path.DirectorySeparatorChar));
+            var target = ResolveLegacyPath(game, pair.Key);
             if (pair.Value.Existed)
-            {
-                if (pair.Value.BackupPath is null || !File.Exists(pair.Value.BackupPath) ||
-                    !string.Equals(Hashing.Sha256(pair.Value.BackupPath), pair.Value.Sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException($"Original backup is missing or damaged: {pair.Key}");
-                await transaction.ReplaceAsync(pair.Value.BackupPath, target, cancellationToken);
-            }
-            else if (File.Exists(target)) File.Delete(target);
+                await transaction.ReplaceAsync(pair.Value.BackupPath!, target, cancellationToken);
+            else if (File.Exists(target))
+                File.Delete(target);
         }
         foreach (var pair in state.Originals)
         {
-            var target = Path.Combine(game.RootPath, pair.Key.Replace('/', Path.DirectorySeparatorChar));
+            var target = ResolveLegacyPath(game, pair.Key);
             if (pair.Value.Existed)
             {
                 if (!File.Exists(target) || !string.Equals(Hashing.Sha256(target), pair.Value.Sha256, StringComparison.OrdinalIgnoreCase))
                     throw new IOException($"Restored file verification failed: {pair.Key}");
             }
-            else if (File.Exists(target)) throw new IOException($"Added file removal verification failed: {pair.Key}");
+            else if (File.Exists(target))
+                throw new IOException($"Added file removal verification failed: {pair.Key}");
         }
-        transaction.Commit();
         stateStore.Remove();
+        transaction.Commit();
         Directory.Delete(recoveryRoot, true);
     }
 
-    private static void ValidateGame(GameInstall game, PayloadManifest manifest)
+    private static string ResolveLegacyPath(GameInstall game, string relative) => relative switch
     {
-        if (!File.Exists(game.ExecutablePath) || !File.Exists(game.AsarPath)) throw new FileNotFoundException("Game executable or ASAR is missing.");
-        var exeHash = Hashing.Sha256(game.ExecutablePath);
-        if (!manifest.SupportedGameExeSha256.Contains(exeHash, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidDataException("Unsupported game executable hash.");
-        var asarHeader = Hashing.AsarHeaderSha256(game.AsarPath);
-        if (!manifest.SupportedAsarHeaderSha256.Contains(asarHeader, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidDataException("Unsupported game ASAR header hash.");
-        if (File.Exists(game.VersionPath))
-        {
-            var versionHash = Hashing.Sha256(game.VersionPath);
-            if (!manifest.SupportedExistingVersionSha256.Contains(versionHash, StringComparer.OrdinalIgnoreCase))
-                throw new InvalidDataException("Unsupported existing version.dll hash.");
-        }
-    }
+        "resources/app.asar" => game.AsarPath,
+        "version.dll" => game.VersionPath,
+        "version_original.dll" => game.VersionOriginalPath,
+        _ => throw new InvalidDataException("Unexpected legacy file path."),
+    };
 
-    private static void ValidatePayloadFile(PayloadManifest manifest, string relativePath, string path)
+    private static void EnsureOfficialUnchanged(GameInstall game, string executableHash, string asarHash)
     {
-        if (!manifest.Files.TryGetValue(relativePath, out var expected) || !File.Exists(path) ||
-            new FileInfo(path).Length != expected.Length ||
-            !string.Equals(Hashing.Sha256(path), expected.Sha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Payload file verification failed: {relativePath}");
-    }
-
-    private static void ThrowIfInjected(FailurePoint selected, FailurePoint current)
-    {
-        if (selected == current) throw new InjectedFailureException(current);
+        if (!string.Equals(Hashing.Sha256(game.ExecutablePath), executableHash, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(Hashing.Sha256(game.AsarPath), asarHash, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Official game files changed during global installation.");
     }
 }

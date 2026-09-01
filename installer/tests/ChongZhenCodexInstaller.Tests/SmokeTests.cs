@@ -11,6 +11,7 @@ public sealed class SmokeTests
     [InlineData("--install-global", AppCommand.InstallGlobal)]
     [InlineData("--uninstall", AppCommand.Uninstall)]
     [InlineData("--audit-payload", AppCommand.AuditPayload)]
+    [InlineData("--refresh-sidecar", AppCommand.RefreshSidecar)]
     public void ParsesCommand(string argument, AppCommand expected)
     {
         Assert.Equal(expected, CommandLine.Parse([argument]).Command);
