@@ -36,7 +36,10 @@
 - 直接启动最终已安装游戏：主窗口出现，无 `Integrity check failed for asar archive`。
 - 观察器随游戏自动启动桥接；一次真实本机 Codex chat completion 返回 HTTP 200 且内容非空。
 - 游戏退出后，桥接进程和 `bridge-ready.json` 在 60 秒宽限内清理，观察器继续常驻。
-- Steam 客户端当前未登录（Steam ID 为 0），因此从 Steam“开始游戏”和 Steam 鉴权票据仍是发布前唯一外部验收项；这不是加载器或 Codex 桥接失败。
+- Steam 最终验收通过：主游戏进程的父进程为 `steam.exe`，主窗口存在，实际加载的游戏根目录 `version.dll` 与发布载荷散列一致。
+- Steam 启动期间真实本机 Codex 请求返回 HTTP 200，并返回指定 `STEAM_OK` 验收标记。
+- 实际安装的 sidecar 同时包含 AU/全球分流、本地 bearer、强制 BYOK 和持久化上下文字段；与官方 ASAR 相比只改变 renderer bundle。
+- 从 Steam 启动的游戏退出后，桥接状态在 60 秒宽限内清理，观察器保持常驻。
 
 ## 隐私与账号行为
 
@@ -47,5 +50,6 @@
 
 ## 发布门槛
 
-- 登录 Steam 后从库中点击“开始游戏”，确认窗口、国际分流与一次真实游戏内 Codex 请求。
-- 该项通过后合并 `main`，等待 GitHub Actions 成功，并上传与上述 SHA-256 完全一致的 Release EXE。
+- [x] 从 Steam 启动游戏，确认窗口、实际加载器、国际分流 sidecar 与真实 Codex 请求。
+- [x] 功能分支 push CI 与 Draft PR CI 成功。
+- [ ] 合并 `main`，等待 main CI 成功，并上传与上述 SHA-256 完全一致的 Release EXE。
